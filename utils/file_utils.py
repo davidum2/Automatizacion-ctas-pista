@@ -26,6 +26,38 @@ class FileUtils:
         
         return xml_files
     
+    def find_subdirectories(self, base_dir):
+        """
+        Encuentra todos los subdirectorios directos de un directorio base.
+        
+        Args:
+            base_dir (str): Directorio base para buscar subdirectorios
+            
+        Returns:
+            list: Lista de rutas a subdirectorios
+        """
+        if not os.path.exists(base_dir):
+            return []
+        
+        return [os.path.join(base_dir, d) for d in os.listdir(base_dir) 
+                if os.path.isdir(os.path.join(base_dir, d))]
+    
+    def find_xml_in_directory(self, directory):
+        """
+        Busca archivos XML en un directorio específico (sin recursión).
+        
+        Args:
+            directory (str): Directorio donde buscar
+            
+        Returns:
+            list: Lista de rutas a archivos XML encontrados
+        """
+        if not os.path.exists(directory):
+            return []
+        
+        return [os.path.join(directory, f) for f in os.listdir(directory) 
+                if f.lower().endswith('.xml') and os.path.isfile(os.path.join(directory, f))]
+    
     def find_pdf_for_xml(self, xml_file_path):
         """
         Busca un archivo PDF correspondiente a un archivo XML en la misma carpeta.
@@ -37,8 +69,14 @@ class FileUtils:
             str: Ruta al archivo PDF o None si no se encuentra
         """
         directory = os.path.dirname(xml_file_path)
+        file_base = os.path.splitext(os.path.basename(xml_file_path))[0]
         
-        # Buscar archivos PDF en la misma carpeta
+        # Primero, buscar un PDF con el mismo nombre base
+        pdf_same_name = os.path.join(directory, file_base + '.pdf')
+        if os.path.exists(pdf_same_name):
+            return pdf_same_name
+        
+        # Si no se encuentra, buscar cualquier PDF en la misma carpeta
         for file in os.listdir(directory):
             if file.lower().endswith('.pdf'):
                 return os.path.join(directory, file)
@@ -67,6 +105,8 @@ def convert_to_pdf(docx_path, output_folder):
     finally:
         # Limpiar procesos residuales de Word
         try:
-            os.system('taskkill /f /im winword.exe')
+            import platform
+            if platform.system() == 'Windows':
+                os.system('taskkill /f /im winword.exe')
         except:
             pass  # Ignorar errores al intentar cerrar Word

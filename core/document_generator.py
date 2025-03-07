@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Importar las funciones específicas de cada módulo
 from generators.creacionDocumentos import creacionDocumentos
-from utils.web_utils import descargarVerificacion
+from utils.web_utils import descargar_verificacion
 
 class DocumentGenerator:
     """
@@ -35,7 +35,7 @@ class DocumentGenerator:
 
 
         try:
-            descargarVerificacion(data, output_dir)
+            descargar_verificacion(data, output_dir)
         
         except Exception as e:
             self.logger.error(f"Error general en la generación de documentos: {str(e)}")
