@@ -249,14 +249,19 @@ class AutomatizacionApp:
         )
     
     def process_on_main_thread(self, excel_path, fecha_documento, mes_asignado, 
-                              personal_recibio, personal_vobo):
+                                personal_recibio, personal_vobo):
         try:
             self.update_status("Iniciando procesamiento...")
             
-            # 1. Leer todo el archivo Excel al principio
+            # 1. Leer el archivo Excel con el nuevo formato
             self.update_status("Leyendo archivo Excel...")
-            partidas = self.excel_reader.read_partidas(excel_path)
-            self.update_status(f"Se encontraron {len(partidas)} partidas en el archivo.")
+            try:
+                partidas = self.excel_reader.read_partidas(excel_path)
+                self.update_status(f"Se encontraron {len(partidas)} partidas en el archivo.")
+            except Exception as e:
+                self.update_status(f"Error al leer el archivo Excel: {str(e)}")
+                messagebox.showerror("Error", f"Error al leer el archivo Excel: {str(e)}")
+                return
             
             # Directorio base (mismo que el archivo Excel)
             base_dir = os.path.dirname(excel_path)
@@ -297,7 +302,7 @@ class AutomatizacionApp:
                 
                 # 3. Escanear subdirectorios de facturas para esta partida
                 subdirs = [d for d in os.listdir(partida_dir) 
-                          if os.path.isdir(os.path.join(partida_dir, d))]
+                        if os.path.isdir(os.path.join(partida_dir, d))]
                 
                 self.update_status(f"  📂 Partida {partida['numero']}: {len(subdirs)} facturas encontradas.")
                 
@@ -347,6 +352,10 @@ class AutomatizacionApp:
                         for key, value in personal_vobo.items():
                             xml_data[key] = value
                         
+                        # Agregar el número adicional de la partida si existe
+                        if 'numero_adicional' in partida and partida['numero_adicional']:
+                            xml_data['numero_adicional'] = partida['numero_adicional']
+                        
                         # 7. Generar documentos para esta factura
                         self.update_status(f"    📝 Generando documentos...")
                         self.document_generator.generate_all_documents(
@@ -378,6 +387,135 @@ class AutomatizacionApp:
         except Exception as e:
             self.update_status(f"ERROR GENERAL: {str(e)}")
             messagebox.showerror("Error", f"Error durante el procesamiento: {str(e)}")
+                               
+            try:
+                self.update_status("Iniciando procesamiento...")
+                
+                # 1. Leer todo el archivo Excel al principio
+                self.update_status("Leyendo archivo Excel...")
+                partidas = self.excel_reader.read_partidas(excel_path)
+                self.update_status(f"Se encontraron {len(partidas)} partidas en el archivo.")
+                
+                # Directorio base (mismo que el archivo Excel)
+                base_dir = os.path.dirname(excel_path)
+                
+                # Valores fijos para simplificar (estos ya no son usados desde la interfaz)
+                numero_mensaje = "CC-001"  # Valor fijo para todos los documentos
+                fecha_mensaje_raw = "2025-01-01"  # Fecha fija como ejemplo
+                numero_oficio = "OF-001"  # Valor fijo para todos los documentos
+                fecha_remision = "7 de marzo de 2025"  # Valor fijo formateado
+                
+                # Variables para seguimiento del progreso total
+                total_facturas_procesadas = 0
+                total_facturas = 0
+                
+                # Primero, contar todas las facturas para tener una idea del progreso total
+                for partida in partidas:
+                    partida_dir = os.path.join(base_dir, partida['numero'])
+                    if os.path.exists(partida_dir):
+                        # Contar subdirectorios (facturas potenciales)
+                        subdirs = [d for d in os.listdir(partida_dir) 
+                                if os.path.isdir(os.path.join(partida_dir, d))]
+                        total_facturas += len(subdirs)
+                
+                self.update_status(f"Total de facturas a procesar: {total_facturas}")
+                
+                # 2. Procesar cada partida
+                for i, partida in enumerate(partidas):
+                    self.update_status(f"\nProcesando partida {i+1}/{len(partidas)}: {partida['numero']} - {partida['descripcion']}...")
+                    
+                    # Actualizar progreso de partidas
+                    self.update_progress(i, len(partidas))
+                    
+                    # Buscar directorio de la partida
+                    partida_dir = os.path.join(base_dir, partida['numero'])
+                    if not os.path.exists(partida_dir):
+                        self.update_status(f"  ⚠️ AVISO: Directorio para partida {partida['numero']} no encontrado.")
+                        continue
+                    
+                    # 3. Escanear subdirectorios de facturas para esta partida
+                    subdirs = [d for d in os.listdir(partida_dir) 
+                            if os.path.isdir(os.path.join(partida_dir, d))]
+                    
+                    self.update_status(f"  📂 Partida {partida['numero']}: {len(subdirs)} facturas encontradas.")
+                    
+                    # 4. Procesar cada factura en esta partida
+                    for j, subdir in enumerate(subdirs):
+                        factura_dir = os.path.join(partida_dir, subdir)
+                        self.update_status(f"  📄 Procesando factura {j+1}/{len(subdirs)} en {subdir}")
+                        
+                        # Actualizar la interfaz para mantenerla responsiva
+                        self.root.update()
+                        
+                        # 5. Buscar archivos XML en este directorio de factura
+                        xml_files = [f for f in os.listdir(factura_dir) 
+                                    if f.lower().endswith('.xml')]
+                        
+                        if not xml_files:
+                            self.update_status(f"    ⚠️ No se encontró archivo XML en {subdir}")
+                            continue
+                        
+                        # Tomar el primer XML encontrado
+                        xml_file = os.path.join(factura_dir, xml_files[0])
+                        
+                        try:
+                            # 6. Procesar la factura individual
+                            self.update_status(f"    🔍 Analizando XML: {os.path.basename(xml_file)}...")
+                            
+                            # Formatear monto
+                            monto_formateado = "$ {:,.2f}".format(partida['monto'])
+                            
+                            # Leer y procesar el XML
+                            xml_data = self.xml_processor.read_xml(
+                                xml_file,
+                                numero_mensaje,
+                                fecha_mensaje_raw,
+                                mes_asignado,
+                                monto_formateado,
+                                fecha_documento,
+                                partida['numero'],
+                                numero_oficio,
+                                fecha_remision
+                            )
+                            
+                            # Agregar información del personal seleccionado
+                            for key, value in personal_recibio.items():
+                                xml_data[key] = value
+                                
+                            for key, value in personal_vobo.items():
+                                xml_data[key] = value
+                            
+                            # 7. Generar documentos para esta factura
+                            self.update_status(f"    📝 Generando documentos...")
+                            self.document_generator.generate_all_documents(
+                                xml_data,
+                                factura_dir,
+                                partida
+                            )
+                            
+                            self.update_status(f"    ✅ Documentos generados para {os.path.basename(xml_file)}.")
+                            total_facturas_procesadas += 1
+                            
+                            # Actualizar barra de progreso con el total de facturas
+                            self.update_progress(total_facturas_procesadas, total_facturas)
+                            
+                        except Exception as e:
+                            self.update_status(f"    ❌ ERROR al procesar {os.path.basename(xml_file)}: {str(e)}")
+                
+                # Actualización final del progreso
+                self.update_progress(100, 100)
+                
+                # Resumen final
+                self.update_status("\n===== RESUMEN DEL PROCESAMIENTO =====")
+                self.update_status(f"Total de partidas encontradas: {len(partidas)}")
+                self.update_status(f"Total de facturas procesadas: {total_facturas_procesadas}/{total_facturas}")
+                self.update_status("¡Procesamiento completado con éxito!")
+                
+                messagebox.showinfo("Éxito", f"Procesamiento completado con éxito.\nSe procesaron {total_facturas_procesadas} facturas de {len(partidas)} partidas.")
+                
+            except Exception as e:
+                self.update_status(f"ERROR GENERAL: {str(e)}")
+                messagebox.showerror("Error", f"Error durante el procesamiento: {str(e)}")
 
 
 if __name__ == "__main__":
