@@ -1,0 +1,67 @@
+SISTEMA DE AUTOMATIZACIÓN DE DOCUMENTOS POR PARTIDAS
+==================================================
+
+Este programa automatiza la generación de documentos relacionados con facturas XML
+organizadas por partidas presupuestarias.
+
+REQUISITOS
+----------
+- Python 3.7 o superior
+- Microsoft Word instalado (para la conversión a PDF)
+- Navegador Chrome instalado (para la verificación del SAT)
+
+INSTALACIÓN
+-----------
+1. Instalar las dependencias ejecutando:
+   pip install -r requirements.txt
+
+2. Opcionalmente, instalar el paquete ejecutando:
+   pip install .
+
+ESTRUCTURA DE ARCHIVOS Y CARPETAS
+---------------------------------
+Para usar correctamente el programa, debes tener:
+
+1. Un archivo Excel con la siguiente estructura:
+   - Columna "Partida": Número de partida
+   - Columna "Descripcion": Descripción de la partida
+   - Columna "Monto": Monto asignado a la partida
+
+2. Carpetas organizadas de la siguiente manera:
+   /ruta/al/Excel.xlsx
+   /ruta/al/24101/          # Carpeta con el número de partida
+     ├── compra1/           # Subcarpeta para cada compra
+     │   ├── factura.xml    # Archivo XML de la factura
+     │   └── factura.pdf    # PDF original de la factura (opcional)
+     └── compra2/           # Otra compra
+         ├── factura.xml
+         └── factura.pdf
+
+USO DEL PROGRAMA
+---------------
+1. Ejecuta el programa con:
+   python main.py
+
+2. En la aplicación:
+   a. Selecciona el archivo Excel de partidas
+   b. Completa los campos de información común
+   c. Haz clic en "Procesar"
+
+3. El programa generará en cada carpeta de compra:
+   - Oficio de remisión (Word y PDF)
+   - Legalización de factura (Word y PDF)
+   - Legalización de verificación del SAT (Word y PDF)
+   - Documento XML (Word y PDF)
+   - Legalización de XML (Word y PDF)
+   - Relación de facturas (Excel)
+
+SOLUCIÓN DE PROBLEMAS
+--------------------
+- Error al descargar verificación del SAT: Completa manualmente el CAPTCHA cuando se abra el navegador.
+- Error al convertir a PDF: Asegúrate de tener Microsoft Word instalado y cerrado antes de ejecutar el programa.
+- Errores en documentos generados: Verifica que las plantillas existan en la carpeta "templates".
+
+SOPORTE
+-------
+Para cualquier duda o problema, contacta a:
+[Tu correo electrónico o información de contacto]
