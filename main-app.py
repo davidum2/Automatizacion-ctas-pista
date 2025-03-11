@@ -391,15 +391,7 @@ class AutomatizacionApp:
 
                             # Leer y procesar el XML
                             xml_data = self.xml_processor.read_xml(
-                                xml_file,
-                                numero_mensaje,
-                                fecha_mensaje_raw,
-                                mes_asignado,
-                                monto_formateado,
-                                fecha_documento,
-                                partida['numero'],
-                                numero_oficio,
-                                fecha_remision
+                                xml_file
                             )
 
                             # Agregar información del personal seleccionado
