@@ -824,17 +824,10 @@ class AutomatizacionApp:
             data['Folio_Fiscal'] = data['UUid']
 
         # 7. Generar número de oficio
-
         data['No_of_remision'] = partida['numero_adicional']
 
-        # Formato para fecha de remisión
-        locale.setlocale(locale.LC_TIME, '')  # Usar configuración del sistema
-        fecha_remision_texto = format_date(fecha_actual, format="d 'de' MMMM 'de' y", locale='es')
-        data['Fecha_remision'] = fecha_remision_texto
-
         # 8. Auto-generar No_mensaje y Fecha_mensaje
-        data['No_mensaje'] = f"M-{fecha_actual.year}-{partida['numero']}"
-        data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento'])
+        data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento_texto'])
 
         return data
 
@@ -845,19 +838,7 @@ class AutomatizacionApp:
         if not conceptos:
             return "Conceptos no disponibles"
 
-        # Si hay menos de 3 conceptos, mostrarlos todos
-        if len(conceptos) <= 3:
-            return ", ".join([f"{cantidad:.3f} {desc}" for desc, cantidad in conceptos.items()])
-
-        # Si hay muchos conceptos, hacer un resumen
-        total_items = sum(conceptos.values())
-
-        # Tomar los 2 conceptos más importantes
-        sorted_items = sorted(conceptos.items(), key=lambda x: x[1], reverse=True)
-        principales = sorted_items[:2]
-
-        texto = ", ".join([f"{cantidad:.3f} {desc}" for desc, cantidad in principales])
-        return f"{texto} y otros artículos (total {total_items:.3f} unidades)"
+        return f"{conceptos}"
 
     def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_comunes):
         """
@@ -868,8 +849,10 @@ class AutomatizacionApp:
             self.medir_tiempo(None)
 
             # Preparar datos para el documento
-            # Aquí iría la lógica para generar el Excel con la relación de facturas
-            # Por ejemplo, usando la función original create_relacion_de_facturas_excel
+
+            #TODO aqui procesaremos los datos y crearemos la relacion de facturas, el resumen de ingresos y egresos y el oficio de remision de partida
+
+
 
             # Simular proceso para demostración
             time.sleep(0.5)  # En la implementación real, esta línea no existiría
