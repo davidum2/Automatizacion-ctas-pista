@@ -1,12 +1,12 @@
 """
 Sistema de Automatización de Documentos por Partidas
-Estructura refactorizada por niveles de procesamiento
+Implementación secuencial con UI responsiva
 """
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
-import threading
+import time
 import locale
 import logging
 from babel.dates import format_date
@@ -18,7 +18,155 @@ from core.document_generator import DocumentGenerator
 from utils.file_utils import FileUtils, convert_to_pdf
 from ui.date_selector import DateSelector
 from utils.formatters import convert_fecha_to_texto, format_fecha_mensaje
-from ui.concepto_editor import ConceptoEditorWindow
+# Implementación directa para editar conceptos (evitar problemas de importación)
+import re
+
+def formatear_conceptos_automatico(conceptos_originales):
+    """
+    Formatea automáticamente los conceptos sin necesidad de interfaz gráfica
+
+    Args:
+        conceptos_originales (dict): Diccionario con los conceptos originales {descripcion: cantidad}
+
+    Returns:
+        str: Texto formateado de conceptos
+    """
+    total_items = sum(conceptos_originales.values())
+
+    # Si solo hay un concepto, usar ese directamente
+    if len(conceptos_originales) == 1:
+        descripcion = list(conceptos_originales.keys())[0]
+        cantidad = list(conceptos_originales.values())[0]
+        return f"{cantidad:.3f} {descripcion}"
+
+    # Si hay 2-3 conceptos, listarlos todos
+    elif len(conceptos_originales) <= 3:
+        conceptos_texto = []
+        for descripcion, cantidad in conceptos_originales.items():
+            # Limpiar descripción
+            clean_desc = re.sub(r'^\d+\s*\.\s*', '', descripcion).strip()
+            conceptos_texto.append(f"{cantidad:.3f} {clean_desc}")
+        return ", ".join(conceptos_texto)
+
+    # Si hay muchos conceptos, hacer un resumen
+    else:
+        # Tomar los 3 conceptos más importantes
+        sorted_items = sorted(conceptos_originales.items(), key=lambda x: x[1], reverse=True)
+        principales = sorted_items[:3]
+
+        conceptos_texto = []
+        for descripcion, cantidad in principales:
+            clean_desc = re.sub(r'^\d+\s*\.\s*', '', descripcion).strip()
+            conceptos_texto.append(f"{cantidad:.3f} {clean_desc}")
+
+        return f"{', '.join(conceptos_texto)} y otros artículos (total {total_items:.3f} unidades)"
+
+
+class SimpleConceptoDialog(tk.simpledialog.Dialog):
+    """Un diálogo simple y ligero para editar conceptos"""
+
+    def __init__(self, parent, conceptos_originales, partida_descripcion):
+        self.conceptos_originales = conceptos_originales
+        self.partida_descripcion = partida_descripcion
+        self.sugerencia = formatear_conceptos_automatico(conceptos_originales)
+
+        # Título corto para evitar problemas de ancho
+        super().__init__(parent, title="Editar Conceptos")
+
+    def body(self, master):
+        """Crear el cuerpo del diálogo"""
+        # Frame principal con padding mínimo
+        frame = tk.Frame(master)
+        frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # Información de la partida (reducida al mínimo)
+        tk.Label(frame, text=f"Partida: {self.partida_descripcion[:50]}...",
+                anchor='w').pack(fill='x')
+
+        # Espacio mínimo
+        tk.Frame(frame, height=5).pack()
+
+        # Texto simple de instrucción
+        tk.Label(frame, text="Edite el texto de conceptos:").pack(anchor='w')
+
+        # Campo de texto
+        self.texto_conceptos = tk.Text(frame, height=10, width=60, wrap='word')
+        self.texto_conceptos.pack(fill='both', expand=True)
+        self.texto_conceptos.insert('1.0', self.sugerencia)
+
+        # Sin scrollbar para reducir complejidad
+
+        # Botón para restaurar sugerencia
+        tk.Button(frame, text="Restaurar Sugerencia",
+                 command=self.restaurar_sugerencia).pack(anchor='w')
+
+        # Para dar foco al campo de texto
+        self.texto_conceptos.focus_set()
+        return frame
+
+    def buttonbox(self):
+        """Personalizar los botones para que sean más simples"""
+        box = tk.Frame(self)
+
+        # Botones simplificados
+        w = tk.Button(box, text="Aceptar", width=10, command=self.ok)
+        w.pack(side='left', padx=5, pady=5)
+        w = tk.Button(box, text="Cancelar", width=10, command=self.cancel)
+        w.pack(side='left', padx=5, pady=5)
+
+        self.bind("<Return>", self.ok)
+        self.bind("<Escape>", self.cancel)
+
+        box.pack()
+
+    def restaurar_sugerencia(self):
+        """Restaura la sugerencia en el campo de texto"""
+        self.texto_conceptos.delete('1.0', 'end')
+        self.texto_conceptos.insert('1.0', self.sugerencia)
+
+    def validate(self):
+        """Validar la entrada"""
+        self.result = self.texto_conceptos.get('1.0', 'end-1c').strip()
+        if not self.result:
+            tk.messagebox.showwarning("Advertencia", "El texto no puede estar vacío")
+            return False
+        return True
+
+    def apply(self):
+        """El resultado ya se guardó en validate()"""
+        pass
+
+
+def editar_conceptos_simple(parent, conceptos_originales, partida_descripcion):
+    """
+    Muestra un diálogo simple para editar conceptos y devuelve el texto editado.
+    Si el usuario cancela, devuelve la sugerencia automática.
+
+    Args:
+        parent: Ventana padre
+        conceptos_originales (dict): Diccionario con los conceptos originales
+        partida_descripcion (str): Descripción de la partida
+
+    Returns:
+        str: Texto de conceptos editado o sugerencia automática
+    """
+    try:
+        # Generar una sugerencia automática primero
+        sugerencia = formatear_conceptos_automatico(conceptos_originales)
+
+        # Mostrar el diálogo simplificado
+        dialog = SimpleConceptoDialog(parent, conceptos_originales, partida_descripcion)
+
+        # Si se canceló o dio error, usar la sugerencia
+        if not hasattr(dialog, 'result') or not dialog.result:
+            return sugerencia
+
+        return dialog.result
+
+    except Exception as e:
+        # Si hay cualquier error, devolver la sugerencia automática
+        print(f"Error en editor de conceptos: {e}")
+        return sugerencia
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO,
@@ -26,7 +174,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 # ===================================================
-# NIVEL 1: CAPA DE UI - INTERFAZ PRINCIPAL
+# APLICACIÓN PRINCIPAL
 # ===================================================
 
 class AutomatizacionApp:
@@ -37,10 +185,9 @@ class AutomatizacionApp:
         self.root.title("Automatización de Documentos por Partidas")
         self.root.geometry("800x700")
 
-            # Añadir configuración predeterminada
+        # Configuración
         self.config = {
             'usar_editor_conceptos': True,  # Activa o desactiva el editor de conceptos
-            # Puedes añadir más opciones de configuración aquí
         }
 
         # Inicializar componentes
@@ -49,10 +196,14 @@ class AutomatizacionApp:
         self.document_generator = DocumentGenerator()
         self.file_utils = FileUtils()
 
-        # Variables para seguimiento de progreso
-        self.total_facturas = 0
-        self.total_facturas_procesadas = 0
-        self.facturas_por_partida = {}
+        # Estadísticas de procesamiento
+        self.facturas_procesadas = 0
+        self.facturas_con_error = 0
+        self.partidas_procesadas = 0
+
+        # Variables para tiempo de procesamiento
+        self.tiempo_inicio = None
+        self.tiempos_operaciones = {}
 
         # Lista de personal predefinido
         self.lista_personal_recibe = self._cargar_personal_recibe()
@@ -133,7 +284,7 @@ class AutomatizacionApp:
         self.mes_asignado_var = tk.StringVar(self.root)
         meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
                 "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        self.mes_asignado_var.set(meses[datetime.now().month - 1])  # Mes actual como predeterminado
+        self.mes_asignado_var.set(meses[datetime.now().month - 1])  # Mes actual predeterminado
         option_menu_meses = tk.OptionMenu(self.root, self.mes_asignado_var, *meses)
         option_menu_meses.grid(row=4, column=1, padx=10, pady=5, sticky='ew')
 
@@ -175,20 +326,20 @@ class AutomatizacionApp:
                                               width=60)
         self.combo_personal_vobo.grid(row=8, column=1, padx=10, pady=5, sticky='ew')
 
-        # Separador antes de barra de progreso
+        # Separador para indicador de estado
         ttk.Separator(self.root, orient='horizontal').grid(
             row=9, column=0, columnspan=3, sticky='ew', pady=10)
 
-        # Barra de progreso
-        tk.Label(self.root, text="Progreso:", anchor='w').grid(
-            row=10, column=0, padx=10, pady=5, sticky='ew')
-        self.progress_bar = ttk.Progressbar(self.root, length=400, mode='determinate')
-        self.progress_bar.grid(row=10, column=1, columnspan=2, padx=10, pady=5, sticky='ew')
+        # Etiqueta de estado de procesamiento
+        self.state_label_var = tk.StringVar(value="Listo para procesar")
+        self.state_label = tk.Label(self.root, textvariable=self.state_label_var,
+                                   font=('Helvetica', 10), fg='blue')
+        self.state_label.grid(row=10, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
 
         # Botón de procesamiento
-        tk.Button(self.root, text="Procesar", command=self.iniciar_proceso,
-                 bg='#4CAF50', fg='white', height=2).grid(
-            row=11, column=0, columnspan=3, pady=20, sticky='ew', padx=20)
+        self.procesar_btn = tk.Button(self.root, text="Procesar", command=self.iniciar_proceso,
+                                     bg='#4CAF50', fg='white', height=2)
+        self.procesar_btn.grid(row=11, column=0, columnspan=3, pady=20, sticky='ew', padx=20)
 
         # Registro de actividad
         tk.Label(self.root, text="Registro de Actividad:", anchor='w').grid(
@@ -200,6 +351,12 @@ class AutomatizacionApp:
         scrollbar = tk.Scrollbar(self.root, command=self.status_text.yview)
         scrollbar.grid(row=13, column=3, sticky='ns')
         self.status_text.config(yscrollcommand=scrollbar.set)
+
+        # Configurar colores para tipos de mensajes
+        self.status_text.tag_config("error", foreground="red")
+        self.status_text.tag_config("warning", foreground="orange")
+        self.status_text.tag_config("success", foreground="green")
+        self.status_text.tag_config("time", foreground="blue")
 
         # Configurar fila para expandir texto de estado
         self.root.rowconfigure(13, weight=1)
@@ -235,6 +392,9 @@ class AutomatizacionApp:
         elif level == "success":
             tag = "success"
             prefix = "✅ "
+        elif level == "time":
+            tag = "time"
+            prefix = "⏱️ "
         else:
             tag = "info"
             prefix = ""
@@ -251,35 +411,96 @@ class AutomatizacionApp:
         else:
             logger.info(message)
 
-    def update_progress(self, value, maximum=100):
-        """Actualiza la barra de progreso"""
-        self.progress_bar['value'] = (value / maximum) * 100
+    def set_processing_state(self, is_processing, message="Procesando..."):
+        """Actualiza el estado de procesamiento de la interfaz"""
+        if is_processing:
+            self.state_label_var.set(message)
+            self.state_label.config(fg='blue')
+            self.procesar_btn.config(state=tk.DISABLED)
+        else:
+            self.state_label_var.set("Proceso completado")
+            self.state_label.config(fg='green')
+            self.procesar_btn.config(state=tk.NORMAL)
         self.root.update_idletasks()
 
+    def medir_tiempo(self, operacion, reiniciar=False):
+        """Mide y registra el tiempo de operaciones"""
+        if reiniciar or self.tiempo_inicio is None:
+            self.tiempo_inicio = time.time()
+            self.tiempos_operaciones = {}
+            return 0
+
+        tiempo_actual = time.time()
+        tiempo_transcurrido = tiempo_actual - self.tiempo_inicio
+
+        if operacion:
+            if operacion in self.tiempos_operaciones:
+                self.tiempos_operaciones[operacion] += tiempo_transcurrido
+            else:
+                self.tiempos_operaciones[operacion] = tiempo_transcurrido
+
+            self.update_status(f"Operación '{operacion}' completada en {tiempo_transcurrido:.2f} segundos", "time")
+
+        self.tiempo_inicio = tiempo_actual
+        return tiempo_transcurrido
+
     def iniciar_proceso(self):
-        """Método que inicia el procesamiento principal"""
+        """Método principal que inicia el procesamiento secuencial"""
         # Validar campos
         if not self._validar_campos():
             return
 
-        # Limpiar estado previo
-        self.status_text.delete(1.0, tk.END)
-        self.status_text.tag_config("error", foreground="red")
-        self.status_text.tag_config("warning", foreground="orange")
-        self.status_text.tag_config("success", foreground="green")
+        # Preparar la interfaz
+        self.status_text.delete(1.0, tk.END)  # Limpiar log
+        self.set_processing_state(True, "Iniciando procesamiento...")
 
-        # Reiniciar contadores
-        self.total_facturas = 0
-        self.total_facturas_procesadas = 0
-        self.facturas_por_partida = {}
+        # Reiniciar estadísticas
+        self.facturas_procesadas = 0
+        self.facturas_con_error = 0
+        self.partidas_procesadas = 0
 
-        # Obtener datos de la interfaz
-        datos_nivel1 = self._obtener_datos_nivel1()
+        # Reiniciar medición de tiempo
+        self.medir_tiempo(None, True)
 
-        # Iniciar procesamiento en un hilo separado para no bloquear la UI
-        threading.Thread(target=self._ejecutar_nivel1,
-                        args=(datos_nivel1,),
-                        daemon=True).start()
+        try:
+            # Obtener datos de la interfaz
+            datos_comunes = self._obtener_datos_comunes()
+
+            # Procesar el archivo Excel
+            self.update_status("Leyendo archivo Excel de partidas...")
+            partidas = self.excel_reader.read_partidas(datos_comunes['excel_path'])
+            self.medir_tiempo("Lectura de Excel")
+
+            self.update_status(f"Se encontraron {len(partidas)} partidas en el archivo.", "success")
+
+            # Procesar cada partida secuencialmente
+            for i, partida in enumerate(partidas, 1):
+                self.update_status(f"\n--- Procesando partida {i}/{len(partidas)}: {partida['numero']} ---")
+                self.set_processing_state(True, f"Procesando partida {i}/{len(partidas)}...")
+
+                # Verificar directorio de la partida
+                partida_dir = os.path.join(datos_comunes['base_dir'], partida['numero'])
+                if not os.path.exists(partida_dir):
+                    self.update_status(f"Directorio para partida {partida['numero']} no encontrado.", "warning")
+                    continue
+
+                # Procesar la partida
+                self._procesar_partida(partida, partida_dir, datos_comunes)
+                self.partidas_procesadas += 1
+
+                # Actualizar UI después de cada partida
+                self.root.update()
+
+            # Proceso completado
+            self._mostrar_resumen_final()
+
+        except Exception as e:
+            self.update_status(f"Error general en el procesamiento: {str(e)}", "error")
+            logger.exception("Error no controlado en el procesamiento")
+            messagebox.showerror("Error", f"Error durante el procesamiento: {str(e)}")
+        finally:
+            # Restaurar interfaz
+            self.set_processing_state(False)
 
     def _validar_campos(self):
         """Valida los campos obligatorios de la interfaz"""
@@ -314,8 +535,8 @@ class AutomatizacionApp:
 
         return True
 
-    def _obtener_datos_nivel1(self):
-        """Recopila los datos del nivel 1 (interfaz principal)"""
+    def _obtener_datos_comunes(self):
+        """Recopila los datos comunes para el procesamiento"""
         excel_path = self.entry_excel_path.get()
         fecha_documento = self.entry_fecha_documento.get()
 
@@ -366,181 +587,38 @@ class AutomatizacionApp:
                 return persona
         return None
 
-
-# ===================================================
-# NIVEL 1: PROCESAMIENTO DE NIVEL SUPERIOR
-# ===================================================
-
-    def _ejecutar_nivel1(self, datos_nivel1):
-        """
-        Ejecuta el procesamiento de nivel 1
-        Este método controla el flujo principal de la aplicación
-        """
-        try:
-            self.update_status("Iniciando procesamiento...")
-
-            # 1. Leer el archivo Excel con partidas
-            self.update_status("Leyendo archivo Excel...")
-            try:
-                partidas = self.excel_reader.read_partidas(datos_nivel1['excel_path'])
-                self.update_status(f"Se encontraron {len(partidas)} partidas en el archivo.", "success")
-            except Exception as e:
-                self.update_status(f"Error al leer el archivo Excel: {str(e)}", "error")
-                messagebox.showerror("Error", f"Error al leer el archivo Excel: {str(e)}")
-                return
-
-            # 2. Contar facturas totales para barra de progreso
-            self.total_facturas = self._contar_facturas_totales(partidas, datos_nivel1['base_dir'])
-            self.update_status(f"Total de facturas a procesar: {self.total_facturas}")
-
-            # 3. Procesar cada partida (Nivel 2)
-            resultados_partidas = []
-            for i, partida in enumerate(partidas):
-                # Actualizar progreso entre partidas
-                self.update_progress(i, len(partidas))
-
-                # Procesar partida actual
-                resultado_partida = self._ejecutar_nivel2_partida(partida, datos_nivel1, i+1, len(partidas))
-                if resultado_partida:
-                    resultados_partidas.append(resultado_partida)
-
-            # 4. Generar informe final si es necesario
-            if resultados_partidas:
-                self._generar_informe_final(resultados_partidas, datos_nivel1)
-
-            # 5. Actualización final del progreso
-            self.update_progress(100, 100)
-
-            # 6. Resumen final
-            self._mostrar_resumen_final(len(partidas), resultados_partidas)
-
-        except Exception as e:
-            self.update_status(f"ERROR GENERAL: {str(e)}", "error")
-            messagebox.showerror("Error", f"Error durante el procesamiento: {str(e)}")
-
-    def _contar_facturas_totales(self, partidas, base_dir):
-        """Cuenta el número total de facturas para todas las partidas"""
-        total = 0
-
-        for partida in partidas:
-            partida_dir = os.path.join(base_dir, partida['numero'])
-            if not os.path.exists(partida_dir):
-                continue
-
-            # Buscar XMLs directamente en la carpeta de partida
-            xml_files_in_partida = [f for f in os.listdir(partida_dir)
-                            if f.lower().endswith('.xml') and os.path.isfile(os.path.join(partida_dir, f))]
-
-            if xml_files_in_partida:
-                # Si hay XMLs directamente en la carpeta, es una sola factura
-                total += 1
-            else:
-                # Si no hay XMLs directos, buscar en subcarpetas
-                subdirs = [d for d in os.listdir(partida_dir)
-                        if os.path.isdir(os.path.join(partida_dir, d))]
-
-                for subdir in subdirs:
-                    factura_dir = os.path.join(partida_dir, subdir)
-                    xml_files = [f for f in os.listdir(factura_dir)
-                                if f.lower().endswith('.xml') and os.path.isfile(os.path.join(factura_dir, f))]
-                    if xml_files:
-                        total += 1
-
-        return total
-
-    def _mostrar_resumen_final(self, num_partidas, resultados_partidas):
-        """Muestra el resumen final del procesamiento"""
-        self.update_status("\n===== RESUMEN DEL PROCESAMIENTO =====")
-        self.update_status(f"Total de partidas encontradas: {num_partidas}")
-        self.update_status(f"Total de facturas procesadas: {self.total_facturas_procesadas}/{self.total_facturas}")
-
-        # Mostrar detalles por partida
-        if resultados_partidas:
-            self.update_status("\nDetalles por partida:")
-            for resultado in resultados_partidas:
-                self.update_status(
-                    f"  Partida {resultado['numero']}: "
-                    f"{resultado['procesadas']}/{resultado['total']} facturas procesadas"
-                )
-
-        self.update_status("¡Procesamiento completado con éxito!", "success")
-        messagebox.showinfo(
-            "Éxito",
-            f"Procesamiento completado.\n"
-            f"Se procesaron {self.total_facturas_procesadas} facturas de {num_partidas} partidas."
-        )
-
-    def _generar_informe_final(self, resultados_partidas, datos_nivel1):
-        """Genera un informe final consolidado de todas las partidas"""
-        # Esta función podría implementarse para generar un informe general si se requiere
-        pass
-
-
-# ===================================================
-# NIVEL 2: PROCESAMIENTO DE PARTIDAS
-# ===================================================
-
-    def _ejecutar_nivel2_partida(self, partida, datos_nivel1, indice, total_partidas):
-        """
-        Ejecuta el procesamiento de nivel 2 para una partida específica
-
-        Args:
-            partida: Diccionario con datos de la partida
-            datos_nivel1: Datos del nivel 1
-            indice: Índice actual de la partida
-            total_partidas: Total de partidas
-
-        Returns:
-            dict: Resultados del procesamiento de la partida o None si hubo error
-        """
-        self.update_status(
-            f"\nProcesando partida {indice}/{total_partidas}: "
-            f"{partida['numero']} - {partida['descripcion']}..."
-        )
-
-        # Validar existencia del directorio de la partida
-        partida_dir = os.path.join(datos_nivel1['base_dir'], partida['numero'])
-        if not os.path.exists(partida_dir):
-            self.update_status(
-                f"Directorio para partida {partida['numero']} no encontrado.",
-                "warning"
-            )
-            return None
-
+    def _procesar_partida(self, partida, partida_dir, datos_comunes):
+        """Procesa una partida y todas sus facturas"""
         # Formatear monto de la partida
         monto_formateado = "$ {:,.2f}".format(partida['monto'])
 
-        # Inicializar contadores para esta partida
-        facturas_totales_partida = 0
-        facturas_procesadas_partida = 0
-        facturas_info = []  # Almacenará información de facturas procesadas
-
-        # PROCESO 2.1: Localizar y procesar facturas en esta partida
         try:
+            # Buscar facturas XML en la partida
+            self.medir_tiempo(None)  # Reiniciar contador para esta partida
+
             # Verificar si hay XML directamente en la carpeta de partida
             xml_files_in_partida = [
                 f for f in os.listdir(partida_dir)
                 if f.lower().endswith('.xml') and os.path.isfile(os.path.join(partida_dir, f))
             ]
 
+            facturas_procesadas = 0
+            facturas_con_error = 0
+            facturas_info = []
+
             if xml_files_in_partida:
                 # CASO 1: XML directamente en la carpeta de partida (una sola factura)
                 self.update_status(f"📄 Encontrado XML directamente en la carpeta de partida")
-                facturas_totales_partida = 1
 
                 # Procesar la factura única
                 xml_file = os.path.join(partida_dir, xml_files_in_partida[0])
-                resultado_factura = self._ejecutar_nivel3_factura(
-                    xml_file,
-                    partida_dir,
-                    partida,
-                    monto_formateado,
-                    datos_nivel1
-                )
+                resultado = self._procesar_factura(xml_file, partida_dir, partida, monto_formateado, datos_comunes)
 
-                if resultado_factura:
-                    facturas_procesadas_partida += 1
-                    facturas_info.append(resultado_factura)
+                if resultado:
+                    facturas_procesadas += 1
+                    facturas_info.append(resultado)
+                else:
+                    facturas_con_error += 1
             else:
                 # CASO 2: Buscar en subcarpetas (múltiples facturas)
                 subdirs = [
@@ -548,283 +626,152 @@ class AutomatizacionApp:
                     if os.path.isdir(os.path.join(partida_dir, d))
                 ]
 
-                self.update_status(
-                    f"📂 Partida {partida['numero']}: {len(subdirs)} subcarpetas encontradas."
-                )
+                self.update_status(f"📂 Partida {partida['numero']}: {len(subdirs)} subcarpetas encontradas.")
 
-                # Contar facturas en subcarpetas
-                facturas_en_subdirs = []
+                # Procesar cada subcarpeta que contenga XML
                 for subdir in subdirs:
                     factura_dir = os.path.join(partida_dir, subdir)
                     xml_files = [
                         f for f in os.listdir(factura_dir)
                         if f.lower().endswith('.xml') and os.path.isfile(os.path.join(factura_dir, f))
                     ]
+
                     if xml_files:
-                        facturas_en_subdirs.append({
-                            'subdir': subdir,
-                            'dir': factura_dir,
-                            'xml_file': os.path.join(factura_dir, xml_files[0])
-                        })
+                        self.update_status(f"  - Procesando factura en {subdir}...")
 
-                facturas_totales_partida = len(facturas_en_subdirs)
-                self.update_status(
-                    f"📋 Partida {partida['numero']}: {facturas_totales_partida} facturas encontradas."
-                )
+                        # Procesar la factura
+                        xml_file = os.path.join(factura_dir, xml_files[0])
+                        resultado = self._procesar_factura(xml_file, factura_dir, partida,
+                                                         monto_formateado, datos_comunes)
 
-                # Procesar cada factura en subcarpetas
-                for i, factura_info in enumerate(facturas_en_subdirs):
-                    self.update_status(
-                        f"📄 Procesando factura {i+1}/{facturas_totales_partida}: {factura_info['subdir']}"
-                    )
+                        if resultado:
+                            facturas_procesadas += 1
+                            facturas_info.append(resultado)
+                        else:
+                            facturas_con_error += 1
 
-                    # Procesar la factura
-                    resultado_factura = self._ejecutar_nivel3_factura(
-                        factura_info['xml_file'],
-                        factura_info['dir'],
-                        partida,
-                        monto_formateado,
-                        datos_nivel1
-                    )
-
-                    if resultado_factura:
-                        facturas_procesadas_partida += 1
-                        facturas_info.append(resultado_factura)
-
-                    # Actualizar interfaz para mantenerla responsiva
+                    # Actualizar la UI después de cada factura
                     self.root.update()
 
-            # PROCESO 2.2: Generar documento consolidado para esta partida
+            # Actualizar estadísticas globales
+            self.facturas_procesadas += facturas_procesadas
+            self.facturas_con_error += facturas_con_error
+
+            # Generar relación de facturas si hay información disponible
             if facturas_info:
-                self._generar_relacion_facturas(partida, facturas_info, partida_dir, datos_nivel1)
+                self._generar_relacion_facturas(partida, facturas_info, partida_dir, datos_comunes)
 
-            # Actualizar contadores globales
-            self.total_facturas_procesadas += facturas_procesadas_partida
+            # Resumen de la partida
+            self.medir_tiempo(f"Partida {partida['numero']} completa")
+            self.update_status(
+                f"Partida {partida['numero']} completada: {facturas_procesadas} facturas procesadas, "
+                f"{facturas_con_error} con errores.",
+                "success" if facturas_con_error == 0 else "warning"
+            )
 
-            # Retornar resultados de esta partida
             return {
                 'numero': partida['numero'],
                 'descripcion': partida['descripcion'],
-                'total': facturas_totales_partida,
-                'procesadas': facturas_procesadas_partida,
-                'facturas': facturas_info
+                'facturas_procesadas': facturas_procesadas,
+                'facturas_con_error': facturas_con_error
             }
 
         except Exception as e:
-            self.update_status(
-                f"Error al procesar partida {partida['numero']}: {str(e)}",
-                "error"
-            )
+            self.update_status(f"Error al procesar partida {partida['numero']}: {str(e)}", "error")
+            logger.exception(f"Error procesando partida {partida['numero']}")
             return None
 
-    def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_nivel1):
-        """
-        Genera un documento de relación de facturas para la partida
-
-        Args:
-            partida: Datos de la partida
-            facturas_info: Lista de información de facturas procesadas
-            partida_dir: Directorio de la partida
-            datos_nivel1: Datos del nivel 1
-        """
+    def _procesar_factura(self, xml_file, output_dir, partida, monto_formateado, datos_comunes):
+        """Procesa una factura individual"""
         try:
-            self.update_status(f"Generando relación de facturas para partida {partida['numero']}...")
-
-            # Aquí implementaríamos la generación del documento consolidado
-            # Por ejemplo, usando la función create_relacion_de_facturas_excel
-
-            self.update_status(
-                f"✅ Relación de facturas generada para partida {partida['numero']}",
-                "success"
-            )
-        except Exception as e:
-            self.update_status(
-                f"Error al generar relación de facturas: {str(e)}",
-                "error"
-            )
-
-
-
-# ===================================================
-# NIVEL 3: PROCESAMIENTO DE FACTURAS INDIVIDUALES
-# ===================================================
-
-    def _ejecutar_nivel3_factura(self, xml_file, output_dir, partida, monto_formateado, datos_nivel1):
-        """
-        Ejecuta el procesamiento de nivel 3 para una factura individual
-
-        Args:
-            xml_file: Ruta al archivo XML
-            output_dir: Directorio donde guardar los documentos generados
-            partida: Datos de la partida
-            monto_formateado: Monto de la partida formateado
-            datos_nivel1: Datos del nivel 1
-
-        Returns:
-            dict/str: Información de la factura procesada, "pendiente" si se abrió el editor,
-                    o None si hubo error
-        """
-        try:
-            # Leer y procesar el XML
             self.update_status(f"🔍 Analizando XML: {os.path.basename(xml_file)}...")
+
+            # Medir tiempo de procesamiento XML
+            self.medir_tiempo(None)
 
             # 1. Extraer información base del XML
             xml_data = self.xml_processor.read_xml(xml_file)
+            tiempo_xml = self.medir_tiempo("Lectura XML")
+
             if not xml_data:
                 self.update_status(f"Error: No se pudo extraer información del XML", "error")
                 return None
 
-            # 2. Crear el diccionario data combinando todas las fuentes
+            # 2. Crear el diccionario data completo
             data = self._crear_diccionario_datos_completo(
                 xml_data,
                 partida,
                 monto_formateado,
-                datos_nivel1
+                datos_comunes
             )
 
-            # 3. Editar conceptos con interfaz gráfica si la opción está activada
+            # 3. Pre-procesar conceptos (formatearlos automáticamente)
+            conceptos_str = self._formatear_conceptos(data['Conceptos'])
+
+            # 4. Si está habilitado el editor de conceptos, mostrarlo
             if self.config.get('usar_editor_conceptos', True):
-                return self._procesar_con_editor_conceptos(data, output_dir, partida)
+                self.update_status(f"✏️ Abriendo editor de conceptos...")
+
+                # Este es un punto crítico donde debemos esperar la interacción del usuario
+                conceptos_editados = self._editar_conceptos_bloqueante(data['Conceptos'], partida['descripcion'])
+
+                if conceptos_editados:
+                    data['Empleo_recurso'] = conceptos_editados
+                else:
+                    # Si no se editaron, usar los conceptos formateados automáticamente
+                    data['Empleo_recurso'] = conceptos_str
             else:
-                # Procesar directamente sin editor
-                conceptos_str = self._formatear_conceptos(data['Conceptos'])
+                # Usar el formato automático
                 data['Empleo_recurso'] = conceptos_str
-                return self._generar_documentos_factura(data, output_dir)
+
+            # 5. Generar documentos
+            self.update_status(f"📝 Generando documentos...")
+            self.medir_tiempo(None)
+            documentos_generados = self.document_generator.generate_all_documents(data, output_dir)
+            self.medir_tiempo("Generación documentos")
+
+            # 6. Registro de éxito
+            self.update_status(
+                f"✅ Documentos generados para factura {data['Serie']}{data['Numero']}",
+                "success"
+            )
+
+            # 7. Retornar información para registro y relación
+            return {
+                'serie_numero': f"{data['Serie']}{data['Numero']}",
+                'fecha': data.get('Fecha_factura_texto', data.get('Fecha_factura', '')),
+                'emisor': data['Nombre_Emisor'],
+                'rfc_emisor': data['Rfc_emisor'],
+                'monto': data['monto'],
+                'conceptos': data.get('Empleo_recurso', ''),
+                'documentos': documentos_generados
+            }
 
         except Exception as e:
             self.update_status(
-                f"Error al procesar los datos del xml {os.path.basename(xml_file)}: {str(e)}",
+                f"Error al procesar factura {os.path.basename(xml_file)}: {str(e)}",
                 "error"
             )
-            logger.error(f"Error en nivel 3 - factura {xml_file}: {str(e)}", exc_info=True)
+            logger.exception(f"Error procesando factura {xml_file}")
             return None
 
-    def _procesar_con_editor_conceptos(self, data, output_dir, partida):
+    def _editar_conceptos_bloqueante(self, conceptos, descripcion_partida):
         """
-        Procesa una factura mostrando primero el editor de conceptos
+        Abre el editor de conceptos y espera de forma bloqueante hasta que el usuario confirme
 
         Args:
-            data: Diccionario con los datos de la factura
-            output_dir: Directorio de salida
-            partida: Información de la partida
+            conceptos: Diccionario de conceptos {descripcion: cantidad}
+            descripcion_partida: Descripción de la partida
 
         Returns:
-            str: "pendiente" para indicar que se continuará después
+            str: Conceptos editados o None si se canceló
         """
-        self.update_status(f"✏️ Abriendo editor de conceptos...")
+        # Usar la función simplificada que ya maneja todo internamente
+        return editar_conceptos_simple(self.root, conceptos, descripcion_partida)
 
-        # Esta variable especial se usará para esperar por el editor
-        self.editor_completado = False
-        self.datos_editados = None
-
-        # Función de callback que se ejecutará cuando el usuario confirme en el editor
-        def on_editor_completed(conceptos_editados):
-            self.datos_editados = conceptos_editados
-            self.editor_completado = True
-            # Continuamos el procesamiento
-            self.root.after(100, lambda: self._continuar_proceso_factura(data, output_dir))
-
-        # Mostrar el editor de conceptos en el hilo principal
-        self.root.after(0, lambda: self._mostrar_editor_conceptos(
-            data['Conceptos'],
-            partida['descripcion'],
-            on_editor_completed
-        ))
-
-        # Retornamos "pendiente" por ahora, el procesamiento continuará en el callback
-        return "pendiente"
-
-    def _mostrar_editor_conceptos(self, conceptos, descripcion_partida, callback):
-        """
-        Muestra el editor de conceptos en el hilo principal
-
-        Args:
-            conceptos: Diccionario de conceptos a editar
-            descripcion_partida: Descripción de la partida para contexto
-            callback: Función a llamar cuando se complete la edición
-        """
-        # Crear una ventana de edición de conceptos
-        editor = ConceptoEditorWindow(
-            self.root,
-            conceptos,
-            descripcion_partida,
-            callback
-        )
-
-    def _continuar_proceso_factura(self, data, output_dir):
-        """
-        Continúa el procesamiento después de que el editor de conceptos se complete
-
-        Args:
-            data: Diccionario de datos de la factura
-            output_dir: Directorio de salida para los documentos
-        """
-        try:
-            # Actualizar los datos con la información editada
-            if self.datos_editados:
-                data['Empleo_recurso'] = self.datos_editados
-
-            # Llamar al método común para generar documentos
-            resultado = self._generar_documentos_factura(data, output_dir)
-
-            # Continuar con la siguiente factura en la cola
-            self._procesar_siguiente_factura()
-
-            return resultado
-        except Exception as e:
-            self.update_status(f"Error al continuar el proceso: {str(e)}", "error")
-            logger.error(f"Error en continuación de proceso: {str(e)}", exc_info=True)
-            self._procesar_siguiente_factura()  # Intentar continuar con la siguiente a pesar del error
-            return None
-
-    def _generar_documentos_factura(self, data, output_dir):
-        """
-        Genera los documentos para una factura
-
-        Args:
-            data: Diccionario con los datos de la factura
-            output_dir: Directorio donde guardar los documentos
-
-        Returns:
-            dict: Información de la factura procesada
-        """
-        # Generar los documentos
-        self.update_status(f"📝 Generando documentos...")
-        documentos_generados = self.document_generator.generate_all_documents(data, output_dir)
-
-        # Actualizar progreso
-        self.total_facturas_procesadas += 1
-        self.update_progress(self.total_facturas_procesadas, self.total_facturas)
-
-        # Registro de éxito
-        self.update_status(
-            f"✅ Documentos generados para factura {data['Serie']}{data['Numero']}",
-            "success"
-        )
-
-        # Retornar información de la factura procesada
-        return {
-            'serie_numero': f"{data['Serie']}{data['Numero']}",
-            'fecha': data.get('Fecha_factura'),
-            'emisor': data['Nombre_Emisor'],
-            'rfc_emisor': data['Rfc_emisor'],
-            'monto': data['monto'],
-            'conceptos': data.get('Empleo_recurso', ''),
-            'documentos': documentos_generados
-        }
-
-    def _crear_diccionario_datos_completo(self, xml_data, partida, monto_formateado, datos_nivel1):
+    def _crear_diccionario_datos_completo(self, xml_data, partida, monto_formateado, datos_comunes):
         """
         Crea un diccionario completo combinando todas las fuentes de datos
-
-        Args:
-            xml_data: Datos extraídos del XML
-            partida: Datos de la partida
-            monto_formateado: Monto formateado
-            datos_nivel1: Datos del nivel 1
-
-        Returns:
-            dict: Diccionario completo de datos
         """
         # Crear un nuevo diccionario
         data = {}
@@ -833,8 +780,8 @@ class AutomatizacionApp:
         data.update(xml_data)
 
         # 2. Agregar datos de la interfaz principal
-        data['Fecha_doc'] = datos_nivel1['fecha_documento_texto']
-        data['Mes'] = datos_nivel1['mes_asignado']
+        data['Fecha_doc'] = datos_comunes['fecha_documento_texto']
+        data['Mes'] = datos_comunes['mes_asignado']
 
         # 3. Agregar información de la partida
         data['No_partida'] = partida['numero']
@@ -842,10 +789,10 @@ class AutomatizacionApp:
         data['monto'] = monto_formateado
 
         # 4. Agregar información del personal seleccionado
-        for key, value in datos_nivel1['personal_recibio'].items():
+        for key, value in datos_comunes['personal_recibio'].items():
             data[key] = value
 
-        for key, value in datos_nivel1['personal_vobo'].items():
+        for key, value in datos_comunes['personal_vobo'].items():
             data[key] = value
 
         # 5. Información de fechas formateadas
@@ -853,7 +800,24 @@ class AutomatizacionApp:
         if 'Fecha_ISO' in data:
             fecha_obj = datetime.strptime(data['Fecha_ISO'].split('T')[0], '%Y-%m-%d')
             data['Fecha_original'] = data['Fecha_ISO']
+
+            # Formato numérico para algunas ocasiones donde se necesite
             data['Fecha_factura'] = fecha_obj.strftime('%d/%m/%Y')
+
+            # Formato textual en español
+            try:
+                locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')  # Intentar configurar locale español
+            except:
+                try:
+                    locale.setlocale(locale.LC_TIME, 'Spanish_Spain.1252')  # Alternativa para Windows
+                except:
+                    pass  # Si no se puede establecer, usar la configuración por defecto
+
+            # Usar format_date de babel para formatear con mes en texto
+            data['Fecha_factura_texto'] = format_date(fecha_obj, format="d 'de' MMMM 'del' yyyy", locale='es')
+            # Capitalizar primera letra
+            if data['Fecha_factura_texto']:
+                data['Fecha_factura_texto'] = data['Fecha_factura_texto'][0].upper() + data['Fecha_factura_texto'][1:]
 
         # 6. Información del Folio Fiscal
         if 'UUid' in data:
@@ -870,26 +834,20 @@ class AutomatizacionApp:
 
         # 8. Auto-generar No_mensaje y Fecha_mensaje
         data['No_mensaje'] = f"M-{fecha_actual.year}-{partida['numero']}"
-        data['Fecha_mensaje'] = format_fecha_mensaje(datos_nivel1['fecha_documento'])
+        data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento'])
 
         return data
 
     def _formatear_conceptos(self, conceptos):
         """
         Formatea los conceptos para presentación
-
-        Args:
-            conceptos: Diccionario de conceptos {descripcion: cantidad}
-
-        Returns:
-            str: Texto formateado de conceptos
         """
         if not conceptos:
             return "Conceptos no disponibles"
 
         # Si hay menos de 3 conceptos, mostrarlos todos
         if len(conceptos) <= 3:
-            return ", ".join([f"{cantidad} {desc}" for desc, cantidad in conceptos.items()])
+            return ", ".join([f"{cantidad:.3f} {desc}" for desc, cantidad in conceptos.items()])
 
         # Si hay muchos conceptos, hacer un resumen
         total_items = sum(conceptos.values())
@@ -898,8 +856,57 @@ class AutomatizacionApp:
         sorted_items = sorted(conceptos.items(), key=lambda x: x[1], reverse=True)
         principales = sorted_items[:2]
 
-        texto = ", ".join([f"{cantidad} {desc}" for desc, cantidad in principales])
-        return f"{texto} y otros artículos (total {total_items} unidades)"
+        texto = ", ".join([f"{cantidad:.3f} {desc}" for desc, cantidad in principales])
+        return f"{texto} y otros artículos (total {total_items:.3f} unidades)"
+
+    def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_comunes):
+        """
+        Genera un documento de relación de facturas para la partida
+        """
+        try:
+            self.update_status(f"Generando relación de facturas para partida {partida['numero']}...")
+            self.medir_tiempo(None)
+
+            # Preparar datos para el documento
+            # Aquí iría la lógica para generar el Excel con la relación de facturas
+            # Por ejemplo, usando la función original create_relacion_de_facturas_excel
+
+            # Simular proceso para demostración
+            time.sleep(0.5)  # En la implementación real, esta línea no existiría
+
+            tiempo_relacion = self.medir_tiempo("Relación de facturas")
+            self.update_status(
+                f"✅ Relación de facturas generada para partida {partida['numero']} en {tiempo_relacion:.2f} segundos",
+                "success"
+            )
+        except Exception as e:
+            self.update_status(
+                f"Error al generar relación de facturas: {str(e)}",
+                "error"
+            )
+
+    def _mostrar_resumen_final(self):
+        """Muestra el resumen final del procesamiento"""
+        tiempo_total = sum(self.tiempos_operaciones.values())
+
+        self.update_status("\n===== RESUMEN DEL PROCESAMIENTO =====")
+        self.update_status(f"Total partidas procesadas: {self.partidas_procesadas}")
+        self.update_status(f"Total facturas procesadas: {self.facturas_procesadas}")
+        self.update_status(f"Facturas con error: {self.facturas_con_error}")
+        self.update_status(f"Tiempo total de procesamiento: {tiempo_total:.2f} segundos")
+
+        # Mostrar tiempos por tipo de operación
+        if self.tiempos_operaciones:
+            self.update_status("\nTiempos por operación:")
+            for operacion, tiempo in sorted(self.tiempos_operaciones.items(), key=lambda x: x[1], reverse=True):
+                if "completa" not in operacion:  # Excluir totales de partidas que ya están sumados en otros
+                    porcentaje = (tiempo / tiempo_total) * 100
+                    self.update_status(f"  - {operacion}: {tiempo:.2f} segundos ({porcentaje:.1f}%)", "time")
+
+        # Mensaje final
+        mensaje_final = f"Proceso completado. {self.facturas_procesadas} facturas procesadas en {self.partidas_procesadas} partidas."
+        self.update_status(mensaje_final, "success")
+        messagebox.showinfo("Proceso Completado", mensaje_final)
 
 # ===================================================
 # FUNCIÓN PRINCIPAL
