@@ -642,7 +642,7 @@ class AutomatizacionApp:
                         # Procesar la factura
                         xml_file = os.path.join(factura_dir, xml_files[0])
                         resultado = self._procesar_factura(xml_file, factura_dir, partida,
-                                                         monto_formateado, datos_comunes)
+                        monto_formateado, datos_comunes)
 
                         if resultado:
                             facturas_procesadas += 1
@@ -823,9 +823,9 @@ class AutomatizacionApp:
         if 'UUid' in data:
             data['Folio_Fiscal'] = data['UUid']
 
-        # 7. Generar número de oficio y fecha de remisión (auto)
-        fecha_actual = datetime.now()
-        data['No_of_remision'] = f"OF-{partida['numero']}-{fecha_actual.strftime('%m%d')}"
+        # 7. Generar número de oficio
+
+        data['No_of_remision'] = partida['numero_adicional']
 
         # Formato para fecha de remisión
         locale.setlocale(locale.LC_TIME, '')  # Usar configuración del sistema
