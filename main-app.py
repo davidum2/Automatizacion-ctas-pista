@@ -840,33 +840,55 @@ class AutomatizacionApp:
 
         return f"{conceptos}"
 
-    def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_comunes):
+    def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_nivel1):
         """
         Genera un documento de relación de facturas para la partida
+
+        Args:
+            partida: Datos de la partida
+            facturas_info: Lista de información de facturas procesadas
+            partida_dir: Directorio de la partida
+            datos_nivel1: Datos del nivel 1
         """
         try:
             self.update_status(f"Generando relación de facturas para partida {partida['numero']}...")
-            self.medir_tiempo(None)
 
-            # Preparar datos para el documento
+            # Importar el módulo de plantillas de partidas
+            from generators.plantillas_partidas import procesar_plantillas_partida
 
-            #TODO aqui procesaremos los datos y crearemos la relacion de facturas, el resumen de ingresos y egresos y el oficio de remision de partida
+            # Preparar datos comunes para las plantillas
+            datos_comunes = {
+                'mes_asignado': datos_nivel1['mes_asignado'],
+                'fecha_documento': datos_nivel1['fecha_documento'],
+                'fecha_documento_texto': datos_nivel1['fecha_documento_texto'],
+                'personal_recibio': datos_nivel1['personal_recibio'],
+                'personal_vobo': datos_nivel1['personal_vobo']
+            }
 
+            # Procesar todas las plantillas de la partida
+            archivos_generados = procesar_plantillas_partida(
+                partida,
+                facturas_info,
+                partida_dir,
+                datos_comunes
+            )
 
+            # Registrar los archivos generados
+            if archivos_generados:
+                for tipo, ruta in archivos_generados.items():
+                    self.update_status(f"  - {tipo.capitalize()}: {os.path.basename(ruta)}")
 
-            # Simular proceso para demostración
-            time.sleep(0.5)  # En la implementación real, esta línea no existiría
-
-            tiempo_relacion = self.medir_tiempo("Relación de facturas")
             self.update_status(
-                f"✅ Relación de facturas generada para partida {partida['numero']} en {tiempo_relacion:.2f} segundos",
+                f"✅ Relación de facturas generada para partida {partida['numero']}",
                 "success"
             )
         except Exception as e:
             self.update_status(
                 f"Error al generar relación de facturas: {str(e)}",
                 "error"
-            )
+            )   
+           
+        
 
     def _mostrar_resumen_final(self):
         """Muestra el resumen final del procesamiento"""
