@@ -827,7 +827,7 @@ class AutomatizacionApp:
         data['No_of_remision'] = partida['numero_adicional']
 
         # 8. Auto-generar No_mensaje y Fecha_mensaje
-        data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento_texto'])
+        data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento'])
 
         return data
 

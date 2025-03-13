@@ -178,7 +178,7 @@ def procesar_plantilla_ingresos(template_path, output_dir, partida, facturas_inf
         ws = wb.active
 
         # Construir el texto dinámico para A1
-        mes = datos_comunes.get('mes_asignado', '').capitalize()
+        mes = datos_comunes.get('mes_asignado', '')
         partida_num = partida.get('numero', '')
         descripcion = partida.get('descripcion', '')
 
@@ -190,8 +190,7 @@ def procesar_plantilla_ingresos(template_path, output_dir, partida, facturas_inf
         
         # Aplicar valores a celdas específicas
         data = {
-            'A1': texto_encabezado,
-            'C3': datetime.now().strftime('%d/%m/%Y'),
+            'A7': texto_encabezado,
             'C4': partida_num,
             'C5': descripcion,
             'C6': mes.capitalize(),
