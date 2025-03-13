@@ -84,7 +84,7 @@ def simular_datos_comunes():
     fecha_texto = convert_fecha_to_texto(fecha_actual)
     
     return {
-        'excel_path': "ruta/simulada/partidas.xlsx",
+        'excel_path': "./test_output/excel_prueba.xlsx",
         'fecha_documento': fecha_actual,
         'fecha_documento_texto': fecha_texto,
         'mes_asignado': "marzo",
@@ -98,7 +98,7 @@ def simular_datos_comunes():
             'Nombre_Vo_Bo': "Rafael López Rodríguez.",
             'Matricula_Vo_Bo': "B-5767973"
         },
-        'base_dir': "ruta/simulada"
+        'base_dir': "./test_output",
     }
 
 def simular_partida():
@@ -108,7 +108,7 @@ def simular_partida():
     return {
         'numero': "24101",
         'descripcion': "Materiales y útiles de oficina",
-        'monto': Decimal('18024.57'),
+        'monto': Decimal('1800.50'),
         'numero_adicional': "ABC/123/2025"
     }
 

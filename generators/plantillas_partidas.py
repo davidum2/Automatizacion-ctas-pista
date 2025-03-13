@@ -83,14 +83,7 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
     """
     logger.info(f"Procesando plantillas para partida {partida.get('numero', 'desconocida')}")
     
-    plantillas = {
-        "ingresos": "../plantillas/Ingresos y Egresos .xlsx",
-        "facturas": "../plantillas/Relacion Facturas.xlsx",
-        "oficio": "../plantillas/Oficio.docx"
-    }
-
-    # Directorio base de plantillas
-    templates_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plantillas")
+  
 
     # Archivos generados
     archivos_generados = {}
@@ -107,8 +100,8 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         
        
         ruta_ingresos = procesar_plantilla_ingresos(
-            os.path.join(templates_dir, plantillas["ingresos"]),
-            partida_dir,
+           
+           
             partida,
             facturas_info,
             datos_comunes
@@ -120,7 +113,7 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
      
         ruta_facturas = procesar_plantilla_facturas(
             os.path.join(templates_dir, plantillas["facturas"]),
-            partida_dir,
+           
             partida,
             facturas_info,
             datos_comunes
@@ -131,8 +124,7 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         
     
         ruta_oficio = procesar_plantilla_oficio(
-            os.path.join(templates_dir, plantillas["oficio"]),
-            partida_dir,
+           
             partida,
             facturas_info,
             datos_comunes
@@ -154,7 +146,7 @@ from openpyxl import load_workbook
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-def procesar_plantilla_ingresos(template_path, output_dir, partida, facturas_info, datos_comunes):
+def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comunes):
     """
     Procesa la plantilla de ingresos/egresos.
 
@@ -168,8 +160,14 @@ def procesar_plantilla_ingresos(template_path, output_dir, partida, facturas_inf
     Returns:
         str: Ruta al archivo generado
     """
+    
     try:
-        # Verificar que la plantilla existe
+         # Definir correctamente la ruta a la plantilla
+        base_dir = os.path.dirname(os.path.abspath(__file__))  # Directorio del script actual
+        plantillas_dir = os.path.join(os.path.dirname(base_dir), "plantillas")  # Directorio de plantillas
+        template_path = os.path.join(plantillas_dir, "Ingresos y Egresos.xlsx")  # Ruta a la plantilla
+
+        
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"No se encontró la plantilla: {template_path}")
 
@@ -180,6 +178,7 @@ def procesar_plantilla_ingresos(template_path, output_dir, partida, facturas_inf
         # Construir el texto dinámico para A1
         mes = datos_comunes.get('mes_asignado', '')
         partida_num = partida.get('numero', '')
+        monto = partida.get('monto', '')
         descripcion = partida.get('descripcion', '')
 
         texto_encabezado = f'Relación de ingresos y egresos correspondientes al mes de {mes} del 2025, de los recursos asignados a la Partida Presupuestal {partida_num} "{descripcion}".'
@@ -191,7 +190,7 @@ def procesar_plantilla_ingresos(template_path, output_dir, partida, facturas_inf
         # Aplicar valores a celdas específicas
         data = {
             'A7': texto_encabezado,
-            'C4': partida_num,
+            'B11': partida_num,
             'C5': descripcion,
             'C6': mes.capitalize(),
             'C7': "2025"  # Año actual o del ejercicio
@@ -237,6 +236,7 @@ def procesar_plantilla_facturas(template_path, output_dir, partida, facturas_inf
     Returns:
         str: Ruta al archivo generado
     """
+    template_path = "../plantillas/Relacion Facturas.xlsx"
     try:
         # Verificar que la plantilla existe
         if not os.path.exists(template_path):
@@ -358,6 +358,7 @@ def procesar_plantilla_oficio(template_path, output_dir, partida, facturas_info,
     Returns:
         str: Ruta al archivo generado
     """
+    template_path = "../plantillas/Oficio.docx"
     try:
         # Verificar que la plantilla existe
         if not os.path.exists(template_path):
