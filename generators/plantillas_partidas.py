@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 def calcular_montos_facturas(facturas_info):
     """
     Calcula información resumida de las facturas procesadas.
-    
+
     Args:
         facturas_info (list): Lista de facturas procesadas
-        
+
     Returns:
         dict: Diccionario con información resumida:
             - total_facturas: Número de facturas válidas
@@ -24,15 +24,15 @@ def calcular_montos_facturas(facturas_info):
     total_facturas = 0
     monto_total = Decimal('0.00')
     montos_individuales = []
-    
+
     # Procesar cada factura
     for factura in facturas_info:
         # Saltear elementos que no son diccionarios
         if not isinstance(factura, dict):
             continue
-            
+
         total_facturas += 1
-        
+
         # Extraer el monto y convertirlo a Decimal
         monto_str = factura.get('monto', '0')
         if isinstance(monto_str, str):
@@ -48,10 +48,10 @@ def calcular_montos_facturas(facturas_info):
             monto = Decimal(str(monto_str))
             montos_individuales.append(monto)
             monto_total += monto
-    
+
     # Formatear el monto total como string con formato moneda
     monto_formateado = f"$ {monto_total:,.2f}"
-    
+
     return {
         'total_facturas': total_facturas,
         'monto_total': monto_total,
@@ -82,8 +82,8 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         dict: Diccionario con las rutas a los archivos generados
     """
     logger.info(f"Procesando plantillas para partida {partida.get('numero', 'desconocida')}")
-    
-  
+
+
 
     # Archivos generados
     archivos_generados = {}
@@ -94,14 +94,13 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         info_facturas = calcular_montos_facturas(facturas_info)
         logger.info(f"Calculados totales para {info_facturas['total_facturas']} facturas. "
                    f"Monto total: {info_facturas['monto_formateado']}")
-        
+
         # Añadir la información resumida a los datos comunes
         datos_comunes['info_facturas'] = info_facturas
-        
-       
+
+
         ruta_ingresos = procesar_plantilla_ingresos(
-           
-           
+            partida_dir,
             partida,
             facturas_info,
             datos_comunes
@@ -109,11 +108,10 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         archivos_generados["ingresos"] = ruta_ingresos
         logger.info(f"Plantilla de ingresos generada en: {ruta_ingresos}")
 
-       
-     
+
+
         ruta_facturas = procesar_plantilla_facturas(
-            os.path.join(templates_dir, plantillas["facturas"]),
-           
+            partida_dir,
             partida,
             facturas_info,
             datos_comunes
@@ -121,10 +119,10 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         archivos_generados["facturas"] = ruta_facturas
         logger.info(f"Plantilla de facturas generada en: {ruta_facturas}")
 
-        
-    
+
+
         ruta_oficio = procesar_plantilla_oficio(
-           
+            partida_dir,
             partida,
             facturas_info,
             datos_comunes
@@ -137,7 +135,7 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
     except Exception as e:
         logger.error(f"Error al procesar plantillas de partida: {str(e)}")
         raise Exception(f"Error al procesar plantillas de partida: {str(e)}")
-    
+
 import os
 import logging
 from datetime import datetime
@@ -146,7 +144,7 @@ from openpyxl import load_workbook
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comunes):
+def procesar_plantilla_ingresos(out_path,partida, facturas_info, datos_comunes):
     """
     Procesa la plantilla de ingresos/egresos.
 
@@ -160,60 +158,93 @@ def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comune
     Returns:
         str: Ruta al archivo generado
     """
-    
+
     try:
          # Definir correctamente la ruta a la plantilla
         base_dir = os.path.dirname(os.path.abspath(__file__))  # Directorio del script actual
         plantillas_dir = os.path.join(os.path.dirname(base_dir), "plantillas")  # Directorio de plantillas
-        template_path = os.path.join(plantillas_dir, "Ingresos y Egresos.xlsx")  # Ruta a la plantilla
+        template_path = os.path.join(plantillas_dir, "ingresos_egresos.docx")  # Ruta a la plantilla
 
-        
+
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"No se encontró la plantilla: {template_path}")
 
-        # Cargar la plantilla existente
-        wb = load_workbook(template_path)
-        ws = wb.active
 
-        # Construir el texto dinámico para A1
+        doc = Document(template_path)
+
         mes = datos_comunes.get('mes_asignado', '')
         partida_num = partida.get('numero', '')
         monto = partida.get('monto', '')
         descripcion = partida.get('descripcion', '')
 
-        texto_encabezado = f'Relación de ingresos y egresos correspondientes al mes de {mes} del 2025, de los recursos asignados a la Partida Presupuestal {partida_num} "{descripcion}".'
 
         # Obtener información resumida de facturas
         info_facturas = datos_comunes.get('info_facturas', {})
-        monto_total = info_facturas.get('monto_total', 0)
-        
-        # Aplicar valores a celdas específicas
-        data = {
-            'A7': texto_encabezado,
-            'B11': partida_num,
-            'C5': descripcion,
-            'C6': mes.capitalize(),
-            'C7': "2025"  # Año actual o del ejercicio
-        }
 
-        # Agregar totales
-        data['G15'] = float(monto_total)  # Celda de total (ajustar según la plantilla)
+        # Total de facturas y monto total
+        total_facturas = info_facturas.get('total_facturas', len([f for f in facturas_info if isinstance(f, dict)]))
+        monto_formateado = info_facturas.get('monto_formateado', "$ 0.00")
 
-        # Aplicar valores a celdas
-        for coordenada, valor in data.items():
-            if coordenada in ws:
-                ws[coordenada].value = valor
+        # Si no hay información resumida, calcularla (respaldo)
+        if 'monto_total' not in info_facturas:
+            monto_total = sum(float(factura.get('monto', '0').replace('$', '').replace(',', ''))
+                            for factura in facturas_info if isinstance(factura, dict))
+            monto_formateado = "$ {:,.2f}".format(monto_total)
 
-        # Guardar el archivo
-        output_path = os.path.join(output_dir, f"Ingresos_Egresos_Partida_{partida_num}.xlsx")
-        wb.save(output_path)
+        # Obtener información resumida de facturas
+        info_facturas = datos_comunes.get('info_facturas', {})
+
+
+
+        # Buscar marcadores en el documento y reemplazarlos con los datos
+        for paragraph in doc.paragraphs:
+            if '{{FECHA_DOCUMENTO}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{FECHA_DOCUMENTO}}', datos_comunes.get('fecha_documento_texto', ''))
+            if '{{MES}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{MES}}', mes)
+            if '{{PARTIDA}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{PARTIDA}}', partida_num)
+            if '{{DESCRIPCION}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{DESCRIPCION}}', descripcion)
+            if '{{GRADO_VO_BO}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{GRADO_VO_BO}}', datos_comunes.get('grado_vobo', ''))
+            if '{{NOMBRE_VO_BO}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{NOMBRE_VO_BO}}', datos_comunes.get('nombre_vobo', ''))
+            if '{{MATRICULA_VO_BO}}' in paragraph.text:
+                paragraph.text = paragraph.text.replace('{{MATRICULA_VO_BO}}', datos_comunes.get('matricula_vobo', ''))
+
+
+
+        # También buscar en las tablas si existen
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        if '{{FECHA_DOCUMENTO}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{FECHA_DOCUMENTO}}', fecha_doc)
+                        if '{{MES}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{MES}}', mes)
+                        if '{{PARTIDA}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{PARTIDA}}', partida_num)
+                        if '{{DESCRIPCION}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{DESCRIPCION}}', descripcion)
+                        if '{{TOTAL_FACTURAS}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{TOTAL_FACTURAS}}', str(total_facturas))
+                        if '{{MONTO_TOTAL}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{MONTO_TOTAL}}', monto_formateado)
+
+        # Guardar el documento
+        output_path = os.path.join(out_path, f"Oficio_Resumen_Partida_{partida_num}.docx")
+        doc.save(output_path)
 
         return output_path
+
+
 
     except Exception as e:
         logger.error(f"Error al procesar plantilla de ingresos: {str(e)}")
         raise Exception(f"Error al procesar plantilla de ingresos: {str(e)}")
-    
+
 import os
 import logging
 from datetime import datetime
@@ -255,7 +286,7 @@ def procesar_plantilla_facturas(template_path, output_dir, partida, facturas_inf
 
         # Obtener información resumida de facturas
         info_facturas = datos_comunes.get('info_facturas', {})
-        
+
         # Aplicar valores a celdas específicas
         data = {
             'A1': texto_encabezado,
@@ -273,14 +304,14 @@ def procesar_plantilla_facturas(template_path, output_dir, partida, facturas_inf
         # Agregar información de facturas
         fila_inicial = 9  # Fila donde comienza la tabla de facturas (ajustar según la plantilla)
         facturas_validas = 0
-        
+
         for i, factura in enumerate(facturas_info):
             if not isinstance(factura, dict):
                 continue
 
             fila = fila_inicial + facturas_validas
             facturas_validas += 1
-            
+
             # Extraer fecha de factura y convertirla si es necesario
             fecha_factura = factura.get('fecha', '')
             if isinstance(fecha_factura, str) and '-' in fecha_factura:
@@ -312,13 +343,13 @@ def procesar_plantilla_facturas(template_path, output_dir, partida, facturas_inf
                         monto = 0
                 else:
                     monto = float(monto_str)
-                    
+
                 ws[f'G{fila}'] = monto
 
         # Calcular el total de montos
         if facturas_validas > 0:
             fila_total = fila_inicial + facturas_validas + 1
-            
+
             # Podemos usar el total precalculado o la fórmula
             if 'monto_total' in info_facturas:
                 ws[f'G{fila_total}'] = float(info_facturas['monto_total'])
@@ -335,7 +366,7 @@ def procesar_plantilla_facturas(template_path, output_dir, partida, facturas_inf
     except Exception as e:
         logger.error(f"Error al procesar plantilla de facturas: {str(e)}")
         raise Exception(f"Error al procesar plantilla de facturas: {str(e)}")
-    
+
 import os
 import logging
 from datetime import datetime
@@ -344,7 +375,7 @@ from docx import Document
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-def procesar_plantilla_oficio(template_path, output_dir, partida, facturas_info, datos_comunes):
+def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes):
     """
     Procesa la plantilla de oficio en formato Word.
 
@@ -375,16 +406,31 @@ def procesar_plantilla_oficio(template_path, output_dir, partida, facturas_info,
 
         # Obtener información resumida de facturas
         info_facturas = datos_comunes.get('info_facturas', {})
-        
+
         # Total de facturas y monto total
         total_facturas = info_facturas.get('total_facturas', len([f for f in facturas_info if isinstance(f, dict)]))
         monto_formateado = info_facturas.get('monto_formateado', "$ 0.00")
-        
+
         # Si no hay información resumida, calcularla (respaldo)
         if 'monto_total' not in info_facturas:
             monto_total = sum(float(factura.get('monto', '0').replace('$', '').replace(',', ''))
                             for factura in facturas_info if isinstance(factura, dict))
             monto_formateado = "$ {:,.2f}".format(monto_total)
+
+
+
+        monto_asignado = partida.get('monto', 0)
+        monto_asignado_str = f"$ {monto_asignado:,.2f}"
+
+        aportacion = monto_total - monto_asignado
+        aportacion_str = f"$ {aportacion:,.2f}"
+
+        suma_ingresos = monto_asignado + aportacion
+        suma_ingrsos_str = f"$ {suma_ingresos:,.2f}"
+
+
+        saldo = suma_ingresos - monto_total
+        saldo_str = f"$ {saldo:,.2f}"
 
         # Buscar marcadores en el documento y reemplazarlos con los datos
         for paragraph in doc.paragraphs:
@@ -406,18 +452,17 @@ def procesar_plantilla_oficio(template_path, output_dir, partida, facturas_info,
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        if '{{FECHA_DOCUMENTO}}' in paragraph.text:
-                            paragraph.text = paragraph.text.replace('{{FECHA_DOCUMENTO}}', fecha_doc)
-                        if '{{MES}}' in paragraph.text:
-                            paragraph.text = paragraph.text.replace('{{MES}}', mes)
-                        if '{{PARTIDA}}' in paragraph.text:
-                            paragraph.text = paragraph.text.replace('{{PARTIDA}}', partida_num)
-                        if '{{DESCRIPCION}}' in paragraph.text:
-                            paragraph.text = paragraph.text.replace('{{DESCRIPCION}}', descripcion)
-                        if '{{TOTAL_FACTURAS}}' in paragraph.text:
-                            paragraph.text = paragraph.text.replace('{{TOTAL_FACTURAS}}', str(total_facturas))
-                        if '{{MONTO_TOTAL}}' in paragraph.text:
-                            paragraph.text = paragraph.text.replace('{{MONTO_TOTAL}}', monto_formateado)
+                        if '{{MONTO}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{MONTO}}', monto_asignado_str)
+                        if '{{APORTACION}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{APORTACION}}', aportacion_str)
+                        if '{{SUMA_INGRESOS}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{SUMA_INGRESOS}}', suma_ingrsos_str)
+                        if '{{EGRESOS}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{EGRESO}}', monto_formateado)
+                        if '{{SALDO}}' in paragraph.text:
+                            paragraph.text = paragraph.text.replace('{{SALDO}}', saldo_str)
+
 
         # Guardar el documento
         output_path = os.path.join(output_dir, f"Oficio_Resumen_Partida_{partida_num}.docx")

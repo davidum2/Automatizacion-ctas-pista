@@ -26,10 +26,10 @@ try:
     # Importación del generador de documentos
     from generators.creacionDocumentos import creacionDocumentos
     from utils.formatters import convert_fecha_to_texto, format_fecha_mensaje, format_monto
-    
+
     # Importar las funciones del nuevo código para procesar plantillas
     from generators.plantillas_partidas import procesar_plantillas_partida, calcular_montos_facturas
-    
+
     # Verificar que los imports funcionan
     logger.info("Módulos importados correctamente")
 except ImportError as e:
@@ -79,10 +79,10 @@ def simular_datos_comunes():
     """
     # Obtener la fecha actual
     fecha_actual = datetime.now().strftime('%Y-%m-%d')
-    
+
     # Convertir a formato texto en español
     fecha_texto = convert_fecha_to_texto(fecha_actual)
-    
+
     return {
         'excel_path': "./test_output/excel_prueba.xlsx",
         'fecha_documento': fecha_actual,
@@ -159,10 +159,10 @@ def preparar_datos_para_documento(xml_data, partida, datos_comunes):
     """
     # Formato de monto
     monto_formateado = format_monto(float(xml_data['Total']))
-    
+
     # Crear diccionario completo
     data = xml_data.copy()
-    
+
     # Agregar datos adicionales
     data['Fecha_doc'] = datos_comunes['fecha_documento_texto']
     data['Mes'] = datos_comunes['mes_asignado']
@@ -173,14 +173,14 @@ def preparar_datos_para_documento(xml_data, partida, datos_comunes):
     data['No_mensaje'] = "123/2025"
     data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento'])
     data['Empleo_recurso'] = "Adquisición de material de oficina"
-    
+
     # Agregar datos del personal
     for key, value in datos_comunes['personal_recibio'].items():
         data[key] = value
-    
+
     for key, value in datos_comunes['personal_vobo'].items():
         data[key] = value
-    
+
     return data
 
 def prueba_generar_documento():
@@ -189,39 +189,17 @@ def prueba_generar_documento():
     """
     # Dirección de prueba
     output_dir = crear_directorio_prueba()
-    
+
     # Obtener datos simulados
     xml_data = simular_xml_data_para_documento()
     partida = simular_partida()
     datos_comunes = simular_datos_comunes()
-    
+
     # Preparar datos para el documento
     data = preparar_datos_para_documento(xml_data, partida, datos_comunes)
-    
-    # Verificar si existe el directorio de plantillas
-    templates_dir = os.path.join(project_root, "plantillas")
-    if not os.path.exists(templates_dir):
-        logger.warning(f"Directorio de plantillas no encontrado: {templates_dir}")
-        logger.warning("Creando directorio de plantillas vacío para pruebas")
-        os.makedirs(templates_dir, exist_ok=True)
-    
-    # Crear una plantilla de prueba si no existe
-    test_template_path = os.path.join(templates_dir, "plantilla_prueba.docx")
-    if not os.path.exists(test_template_path):
-        logger.warning("No se encontró plantilla de prueba. Debes crear una manualmente.")
-        logger.info(f"Ruta esperada de la plantilla: {test_template_path}")
-        return
-    
-    try:
-        # Generar documento de prueba
-        logger.info("Generando documento de prueba...")
-        output_path = creacionDocumentos(test_template_path, output_dir, data, "documento_prueba")
-        
-        logger.info(f"Documento generado exitosamente: {output_path}")
-        logger.info(f"Revisa el directorio: {output_dir}")
-        
-    except Exception as e:
-        logger.error(f"Error generando documento: {e}")
+
+
+
 
 def prueba_procesar_plantillas_partida():
     """
@@ -229,62 +207,48 @@ def prueba_procesar_plantillas_partida():
     """
     # Dirección de prueba
     output_dir = crear_directorio_prueba()
-    
+
     # Obtener datos simulados
     facturas_info = simular_datos_de_facturas()
     partida = simular_partida()
     datos_comunes = simular_datos_comunes()
-    
+
     try:
-        # Imprimir la ubicación de las plantillas esperada
-        expected_templates_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plantillas")
-        logger.info(f"Se buscarán plantillas en: {expected_templates_dir}")
-        
-        # Verificar si existen las plantillas necesarias
-        required_templates = [
-            "Ingresos y Egresos .xlsx",
-            "Relacion Facturas.xlsx",
-            "Oficio.docx"
-        ]
-        
-        for template in required_templates:
-            template_path = os.path.join(expected_templates_dir, template)
-            if not os.path.exists(template_path):
-                logger.warning(f"No se encontró la plantilla: {template}")
-        
+
+
         # Calcular información resumida de facturas
         info_facturas = calcular_montos_facturas(facturas_info)
         logger.info(f"Calculados totales: {info_facturas['total_facturas']} facturas, "
                    f"monto total: {info_facturas['monto_formateado']}")
-        
+
         # Añadir la información resumida a los datos comunes
         datos_comunes['info_facturas'] = info_facturas
-        
+
         # Procesar las plantillas
         logger.info("Procesando plantillas de partida...")
         archivos_generados = procesar_plantillas_partida(partida, facturas_info, output_dir, datos_comunes)
-        
+
         logger.info("Plantillas procesadas exitosamente:")
         for tipo, ruta in archivos_generados.items():
             logger.info(f"- {tipo}: {ruta}")
-        
+
         logger.info(f"Revisa el directorio: {output_dir}")
-        
+
     except Exception as e:
         logger.error(f"Error procesando plantillas: {e}")
 
 def main():
     """Función principal para probar las funciones de generación de facturas"""
     logger.info("=== INICIANDO PRUEBA DE GENERACIÓN DE FACTURAS ===")
-    
+
     # 1. Prueba básica de generación de un documento
     logger.info("\n--- Prueba de generación de documento individual ---")
     prueba_generar_documento()
-    
+
     # 2. Prueba de procesamiento de plantillas para una partida
     logger.info("\n--- Prueba de procesamiento de plantillas de partida ---")
     prueba_procesar_plantillas_partida()
-    
+
     logger.info("\n=== PRUEBA FINALIZADA ===")
 
 if __name__ == "__main__":
