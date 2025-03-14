@@ -129,7 +129,7 @@ class FacturaPDFProcessor:
         """
         try:
             self.update_status("Procesando PDFs de la factura...")
-            
+            path_xml = os.path.dirname(xml_path)
             # 1. Encontrar el PDF original de la factura
             factura_pdf_path = self.find_original_pdf(xml_path)
             if not factura_pdf_path:
@@ -148,7 +148,7 @@ class FacturaPDFProcessor:
             required_pdfs = [
                 'legalizacion_factura',
                 'legalizacion_verificacion',
-                'legalizacion_xml',
+                'legalizacion_xmls',
                 'xml'
             ]
             
@@ -158,16 +158,16 @@ class FacturaPDFProcessor:
                 return None
             
             # 4. Buscar el PDF de verificación del SAT
-            verificacion_sat_pdf = self.find_verificacion_sat_pdf(output_dir)
+            verificacion_sat_pdf = self.find_verificacion_sat_pdf(path_xml)
             if not verificacion_sat_pdf:
                 # Crear un PDF vacío como sustituto
                 verificacion_sat_pdf = self.create_empty_pdf(
-                    os.path.join(output_dir, "verificacion_sat_empty.pdf"),
+                    os.path.join(output_dir, "Verificación de Comprobantes Fiscales Digitales por Internet.pdf"),
                     "No se encontró la verificación del SAT"
                 )
             
             # 5. Crear documento combinado
-            combined_pdf_path = os.path.join(output_dir, "documento_completo.pdf")
+            combined_pdf_path = os.path.join(path_xml, "documento_completo.pdf")
             
             result = self.pdf_manager.create_factura_legal_document(
                 combined_pdf_path,
@@ -176,7 +176,7 @@ class FacturaPDFProcessor:
                 verificacion_sat_pdf,
                 pdf_files['legalizacion_verificacion'],
                 pdf_files['xml'],
-                pdf_files['legalizacion_xml']
+                pdf_files['legalizacion_xmls']
             )
             
             if result:
@@ -197,43 +197,61 @@ class FacturaPDFProcessor:
             self.update_status(f"Error al procesar PDFs de la factura: {str(e)}", "error")
             logger.exception("Error procesando PDFs de factura")
             return None
-    
-    def find_verificacion_sat_pdf(self, directory):
+    # aqui comienza
+
+    def find_verificacion_sat_pdf(self, xml_path):
         """
-        Busca el PDF de verificación del SAT en un directorio.
+        Busca el PDF de verificación del SAT en el mismo directorio que el XML.
         
         Args:
-            directory (str): Directorio donde buscar
+            xml_path (str): Ruta al archivo XML de la factura
             
         Returns:
             str or None: Ruta al PDF encontrado o None si no se encuentra
         """
         try:
+            # Obtener el directorio donde está el XML
+            
+            
             # Patrones comunes para archivos de verificación del SAT
             verification_patterns = [
-                "Verificación de Comprobantes Fiscales Digitales por Internet",
-                "verificacion_",
-                "verificacion-",
-                "sat_",
-                "sat-"
+                "verificación de comprobantes",
+                "verificacion de comprobantes",
+                "verificación",
+                "verificacion",
+                "sat",
+                "cfdi"
             ]
             
-            # Buscar archivos que coincidan con los patrones
-            for file in os.listdir(directory):
-                if file.lower().endswith('.pdf'):
-                    for pattern in verification_patterns:
-                        if pattern in file.lower():
-                            pdf_path = os.path.join(directory, file)
-                            self.update_status(f"Verificación SAT encontrada: {file}")
-                            return pdf_path
+            # Buscar archivos PDF en el directorio
+            pdf_files = [f for f in os.listdir(xml_path) if f.lower().endswith('.pdf')]
+            
+            # Primero buscar por patrones exactos
+            for file in pdf_files:
+                file_lower = file.lower()
+                if any(pattern in file_lower for pattern in verification_patterns):
+                    pdf_path = os.path.join(xml_path, file)
+                    self.update_status(f"Verificación SAT encontrada: {file}")
+                    return pdf_path
+            
+            # Si no se encuentra, intentar buscar cualquier PDF que no sea factura.pdf
+            for file in pdf_files:
+                file_lower = file.lower()
+                if "factura" not in file_lower and not file_lower.startswith("legalizacion"):
+                    pdf_path = os.path.join(xml_path, file)
+                    self.update_status(f"Posible verificación SAT encontrada: {file}", "warning")
+                    return pdf_path
             
             self.update_status("No se encontró la verificación del SAT", "warning")
             return None
-            
+                
         except Exception as e:
             self.update_status(f"Error al buscar verificación SAT: {str(e)}", "error")
             return None
-    
+
+
+
+#  aqui termona 
     def create_empty_pdf(self, output_path, text="Documento no disponible"):
         """
         Crea un PDF con un mensaje simple.

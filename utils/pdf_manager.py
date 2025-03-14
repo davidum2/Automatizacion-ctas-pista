@@ -210,57 +210,54 @@ class PDFManager:
         except Exception as e:
             logger.error(f"Error al crear PDF alternado: {str(e)}")
             raise
-    
+    # aqui inicia
+  
     def create_complex_document(self, output_path, document_config):
         """
         Crea un documento PDF complejo siguiendo una configuración específica.
-        
-        Args:
-            output_path (str): Ruta donde guardar el PDF resultante
-            document_config (list): Lista de diccionarios con la configuración de cada documento.
-                Cada diccionario debe tener:
-                - 'path': Ruta al archivo PDF
-                - 'all_pages': True para incluir todas las páginas, False para páginas específicas
-                - 'pages': Lista de números de página a incluir (solo si all_pages es False)
-                - 'interleave_with': Opcional, ruta a un PDF para intercalar después de cada página
-                - 'interleave_once': Opcional, True para intercalar solo después del documento completo
-            
-        Returns:
-            str: Ruta al PDF resultante
         """
         try:
             # Crear el nuevo PDF
             writer = PdfWriter()
             
-            # Procesar cada documento en la configuración
-            for doc_config in document_config:
-                # Verificar que el archivo existe
-                if not os.path.exists(doc_config['path']):
-                    logger.warning(f"Archivo no encontrado: {doc_config['path']}")
-                    continue
-                
-                # Abrir el PDF
-                with open(doc_config['path'], 'rb') as file:
+            # Lista para mantener las referencias a los objetos de archivo abiertos
+            open_files = []
+            readers = []
+            
+            try:
+                # Procesar cada documento en la configuración
+                for doc_config in document_config:
+                    # Verificar que el archivo existe
+                    if not os.path.exists(doc_config['path']):
+                        logger.warning(f"Archivo no encontrado: {doc_config['path']}")
+                        continue
+                    
+                    # Abrir el PDF y mantenerlo en la lista de archivos abiertos
+                    file = open(doc_config['path'], 'rb')
+                    open_files.append(file)
                     reader = PdfReader(file)
+                    readers.append(reader)
                     
                     # Determinar qué páginas incluir
                     if doc_config.get('all_pages', True):
                         pages_to_add = range(len(reader.pages))
                     else:
                         # Ajustar índices a base 0 (los números de página comienzan en 1)
-                        pages_to_add = [p-1 for p in doc_config.get('pages', []) if 1 <= p <= len(reader.pages)]
+                        pages_to_add = [p-1 for p in doc_config.get('pages', []) 
+                                    if 1 <= p <= len(reader.pages)]
                     
                     # Documento para intercalar
-                    interleave_pdf = None
                     interleave_reader = None
                     
                     if 'interleave_with' in doc_config and os.path.exists(doc_config['interleave_with']):
-                        with open(doc_config['interleave_with'], 'rb') as interleave_file:
-                            interleave_reader = PdfReader(interleave_file)
-                            
-                            # Si no hay páginas en el documento para intercalar, omitirlo
-                            if len(interleave_reader.pages) == 0:
-                                interleave_reader = None
+                        interleave_file = open(doc_config['interleave_with'], 'rb')
+                        open_files.append(interleave_file)
+                        interleave_reader = PdfReader(interleave_file)
+                        readers.append(interleave_reader)
+                        
+                        # Si no hay páginas en el documento para intercalar, omitirlo
+                        if len(interleave_reader.pages) == 0:
+                            interleave_reader = None
                     
                     # Añadir páginas con intercalado si es necesario
                     for i, page_index in enumerate(pages_to_add):
@@ -280,18 +277,29 @@ class PDFManager:
                     # Intercalar una sola vez después de todo el documento si está configurado
                     if interleave_reader and doc_config.get('interleave_once', False):
                         writer.add_page(interleave_reader.pages[0])
-            
-            # Guardar el resultado
-            with open(output_path, 'wb') as output_file:
-                writer.write(output_file)
-            
-            logger.info(f"Documento complejo creado exitosamente: {output_path}")
-            return output_path
                 
+                # Guardar el resultado
+                with open(output_path, 'wb') as output_file:
+                    writer.write(output_file)
+                
+                logger.info(f"Documento complejo creado exitosamente: {output_path}")
+                return output_path
+                    
+            finally:
+                # Cerrar todos los archivos abiertos
+                for file in open_files:
+                    try:
+                        file.close()
+                    except:
+                        pass
+                    
         except Exception as e:
             logger.error(f"Error al crear documento complejo: {str(e)}")
             raise
-    
+
+
+
+    # aqui termina
     def create_factura_legal_document(self, output_path, factura_pdf, legalizacion_factura_pdf, 
                                       verificacion_sat_pdf, legalizacion_verificacion_pdf,
                                       xml_pdf, legalizacion_xml_pdf):
