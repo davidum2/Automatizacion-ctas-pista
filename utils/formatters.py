@@ -1,6 +1,10 @@
+"""
+Funciones de formateo de datos
+"""
 from datetime import datetime
 from babel.dates import format_date
 import locale
+import re
 
 def convert_fecha_to_texto(fecha_str):
     """
