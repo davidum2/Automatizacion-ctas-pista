@@ -26,7 +26,7 @@ class FacturaController:
         """
         self.ui = ui
         self.xml_processor = XMLProcessor()
-        self.document_generator = DocumentGenerator()
+        self.document_generator = DocumentGenerator(ui)
         
     def procesar_factura(self, xml_file, output_dir, partida, monto_formateado, datos_comunes):
         """
@@ -76,6 +76,9 @@ class FacturaController:
 
             # Añadir explícitamente el monto decimal para cálculos posteriores
             data['monto_decimal'] = monto_decimal
+            
+            # Importante: Guardar la ruta del XML original para su uso posterior
+            data['xml_path'] = xml_file
 
             # 3. Pre-procesar conceptos (formatearlos automáticamente)
             conceptos_str = self._formatear_conceptos_automatico(data['Conceptos'])
@@ -97,17 +100,27 @@ class FacturaController:
                 # Usar el formato automático
                 data['Empleo_recurso'] = conceptos_str
 
-            # 5. Generar documentos
+            # 5. Generar documentos (DOCX y PDF)
             self.ui.update_status(f"📝 Generando documentos...")
-            documentos_generados = self.document_generator.generate_all_documents(data, output_dir)
+            documento_results = self.document_generator.generate_all_documents(data, output_dir)
 
-            # 6. Registro de éxito
+            # 6. Extraer rutas de documentos generados
+            docx_files = documento_results.get('docx_files', {})
+            pdf_files = {}
+            pdf_combinado = None
+            
+            if documento_results.get('pdf_processed', False):
+                pdf_data = documento_results.get('pdf_files', {})
+                pdf_files = pdf_data.get('generated_pdfs', {})
+                pdf_combinado = pdf_data.get('combined_pdf')
+
+            # 7. Registro de éxito
             self.ui.update_status(
                 f"✅ Documentos generados para factura {data['Serie']}{data['Numero']}",
                 "success"
             )
 
-            # 7. Retornar información para registro y relación
+            # 8. Retornar información para registro y relación
             return {
                 'serie_numero': f"{data['Serie']}{data['Numero']}",
                 'fecha': data.get('Fecha_factura_texto', data.get('Fecha_factura', '')),
@@ -117,7 +130,11 @@ class FacturaController:
                 'monto': data['monto'],
                 'monto_decimal': data['monto_decimal'],  # Incluir el valor decimal para sumas posteriores
                 'conceptos': data.get('Empleo_recurso', ''),
-                'documentos': documentos_generados
+                'documentos': {
+                    **docx_files,  # Documentos DOCX
+                    'pdf_files': pdf_files,  # PDFs individuales
+                    'pdf_combinado': pdf_combinado  # PDF combinado final
+                }
             }
 
         except Exception as e:

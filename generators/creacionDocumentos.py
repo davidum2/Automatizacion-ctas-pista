@@ -22,7 +22,7 @@ def creacionDocumentos(template_path, output_dir, data, template_name):
             raise FileNotFoundError(f"No se encontró la plantilla: {template_path}")
 
         # Determinar si estamos trabajando con la plantilla XML
-        es_plantilla_xml = "xml.docx" in template_path.lower() or template_name.lower() == "xml"
+        es_plantilla_xml = "xml.docx" in template_path.lower() == "xml"
 
         # Cargar la plantilla
         doc = Document(template_path)

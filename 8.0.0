@@ -1,0 +1,16 @@
+Requirement already satisfied: PyPDF2 in c:\users\pc trans\appdata\local\programs\python\python313\lib\site-packages (3.0.1)
+Collecting pikepdf
+  Downloading pikepdf-9.5.2-cp313-cp313-win_amd64.whl.metadata (8.3 kB)
+Requirement already satisfied: Pillow>=10.0.1 in c:\users\pc trans\appdata\local\programs\python\python313\lib\site-packages (from pikepdf) (11.1.0)
+Collecting Deprecated (from pikepdf)
+  Downloading Deprecated-1.2.18-py2.py3-none-any.whl.metadata (5.7 kB)
+Requirement already satisfied: lxml>=4.8 in c:\users\pc trans\appdata\local\programs\python\python313\lib\site-packages (from pikepdf) (5.3.0)
+Requirement already satisfied: packaging in c:\users\pc trans\appdata\local\programs\python\python313\lib\site-packages (from pikepdf) (24.2)
+Collecting wrapt<2,>=1.10 (from Deprecated->pikepdf)
+  Downloading wrapt-1.17.2-cp313-cp313-win_amd64.whl.metadata (6.5 kB)
+Downloading pikepdf-9.5.2-cp313-cp313-win_amd64.whl (3.5 MB)
+   ---------------------------------------- 3.5/3.5 MB 10.7 MB/s eta 0:00:00
+Downloading Deprecated-1.2.18-py2.py3-none-any.whl (10.0 kB)
+Downloading wrapt-1.17.2-cp313-cp313-win_amd64.whl (38 kB)
+Installing collected packages: wrapt, Deprecated, pikepdf
+Successfully installed Deprecated-1.2.18 pikepdf-9.5.2 wrapt-1.17.2

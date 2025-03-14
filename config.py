@@ -16,6 +16,15 @@ APP_CONFIG = {
     ]
 }
 
+# Configuración para generación de PDFs
+PDF_CONFIG = {
+    'generar_pdf_combinado': True,  # Activa o desactiva la generación del PDF combinado
+    'verificacion_sat_requerida': False,  # Si es True, mostrará un error cuando no se pueda obtener la verificación
+    'incluir_xml_en_combinado': True,  # Si es False, el XML no se incluirá en el PDF combinado
+    'aplicar_rotacion_pdf': False,  # Si es True, aplicará rotación a los PDFs según sea necesario
+    'rotacion_grados': 90  # Ángulos de rotación (90, 180, 270)
+}
+
 # Información de personal predefinido
 PERSONAL_RECIBE = [
     {
