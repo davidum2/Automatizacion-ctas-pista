@@ -10,6 +10,7 @@ import time
 import locale
 import logging
 from babel.dates import format_date
+from decimal import Decimal
 
 # Importar módulos refactorizados
 from core.excel_reader import ExcelReader
@@ -657,9 +658,29 @@ class AutomatizacionApp:
             self.facturas_procesadas += facturas_procesadas
             self.facturas_con_error += facturas_con_error
 
+            # Calcular el total de montos de las facturas
+            monto_total = Decimal('0.00')
+            for factura in facturas_info:
+                if isinstance(factura, dict) and 'monto_decimal' in factura:
+                    monto_total += factura['monto_decimal']
+                    # Formatear el monto total
+            monto_total_formateado = "$ {:,.2f}".format(monto_total)
+            
+            # Añadir los datos de montos a los datos comunes para las plantillas
+            datos_partida = {
+                'monto_total': monto_total,
+                'monto_total_formateado': monto_total_formateado
+            }
+            
+            # Mostrar el total calculado
+            self.update_status(
+                f"Monto total de facturas en partida {partida['numero']}: {monto_total_formateado}",
+                "success"
+            )
+
             # Generar relación de facturas si hay información disponible
             if facturas_info:
-                self._generar_relacion_facturas(partida, facturas_info, partida_dir, datos_comunes)
+                self._generar_relacion_facturas(partida, facturas_info, partida_dir, datos_comunes, datos_partida)
 
             # Resumen de la partida
             self.medir_tiempo(f"Partida {partida['numero']} completa")
@@ -673,7 +694,9 @@ class AutomatizacionApp:
                 'numero': partida['numero'],
                 'descripcion': partida['descripcion'],
                 'facturas_procesadas': facturas_procesadas,
-                'facturas_con_error': facturas_con_error
+                'facturas_con_error': facturas_con_error,
+                'monto_total': monto_total,
+                'monto_total_formateado': monto_total_formateado
             }
 
         except Exception as e:
@@ -697,13 +720,30 @@ class AutomatizacionApp:
                 self.update_status(f"Error: No se pudo extraer información del XML", "error")
                 return None
 
+            # Extraer el monto de la factura correctamente
+            if 'Total' in xml_data:
+                try:
+                    # Convertir el monto a Decimal para cálculos precisos
+                    monto_decimal = Decimal(str(xml_data['Total']))
+                    monto_formateado_factura = "$ {:,.2f}".format(monto_decimal)
+                except:
+                    # Si hay error, usar un valor por defecto
+                    monto_decimal = Decimal('0.00')
+                    monto_formateado_factura = "$ 0.00"
+            else:
+                monto_decimal = Decimal('0.00')
+                monto_formateado_factura = "$ 0.00"
+
             # 2. Crear el diccionario data completo
             data = self._crear_diccionario_datos_completo(
                 xml_data,
                 partida,
-                monto_formateado,
+                monto_formateado_factura,  # Usar el monto formateado de la factura
                 datos_comunes
             )
+
+            # Añadir explícitamente el monto decimal para cálculos posteriores
+            data['monto_decimal'] = monto_decimal
 
             # 3. Pre-procesar conceptos (formatearlos automáticamente)
             conceptos_str = self._formatear_conceptos(data['Conceptos'])
@@ -743,6 +783,7 @@ class AutomatizacionApp:
                 'emisor': data['Nombre_Emisor'],
                 'rfc_emisor': data['Rfc_emisor'],
                 'monto': data['monto'],
+                'monto_decimal': data['monto_decimal'],  # Incluir el valor decimal para sumas posteriores
                 'conceptos': data.get('Empleo_recurso', ''),
                 'documentos': documentos_generados
             }
@@ -827,6 +868,7 @@ class AutomatizacionApp:
         data['No_of_remision'] = partida['numero_adicional']
 
         # 8. Auto-generar No_mensaje y Fecha_mensaje
+        data['No_mensaje'] = partida.get('numero_adicional', '')
         data['Fecha_mensaje'] = format_fecha_mensaje(datos_comunes['fecha_documento'])
 
         return data
@@ -838,42 +880,45 @@ class AutomatizacionApp:
         if not conceptos:
             return "Conceptos no disponibles"
 
-        return f"{conceptos}"
+        return formatear_conceptos_automatico(conceptos)
 
-    # aqui inicia
-
-    def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_nivel1):
+    def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_comunes, datos_partida=None):
         """
-    Genera un documento de relación de facturas para la partida
+        Genera un documento de relación de facturas para la partida
 
-    Args:
-        partida: Datos de la partida
-        facturas_info: Lista de información de facturas procesadas
-        partida_dir: Directorio de la partida
-        datos_nivel1: Datos del nivel 1
-    """
+        Args:
+            partida: Datos de la partida
+            facturas_info: Lista de información de facturas procesadas
+            partida_dir: Directorio de la partida
+            datos_comunes: Datos comunes para las plantillas
+            datos_partida: Datos específicos de la partida, incluidos montos totales
+        """
         try:
             self.update_status(f"Generando relación de facturas para partida {partida['numero']}...")
 
             # Importar el módulo de plantillas de partidas
             from generators.plantillas_partidas import procesar_plantillas_partida, calcular_montos_facturas
 
-            # Preparar datos comunes para las plantillas
-            datos_comunes = {
-                'mes_asignado': datos_nivel1['mes_asignado'],
-                'fecha_documento': datos_nivel1['fecha_documento'],
-                'fecha_documento_texto': datos_nivel1['fecha_documento_texto'],
-                'personal_recibio': datos_nivel1['personal_recibio'],
-                'personal_vobo': datos_nivel1['personal_vobo']
-            }
-
-            # Calcular información resumida de facturas (totales, montos, etc.)
-            info_facturas = calcular_montos_facturas(facturas_info)
-            self.update_status(f"  - Calculados totales para {info_facturas['total_facturas']} facturas. "
-                            f"Monto total: {info_facturas['monto_formateado']}")
+            # Preparar datos comunes para las plantillas (hacer una copia para no modificar el original)
+            datos_comunes_copia = datos_comunes.copy()
+            
+            # Si se proporcionaron datos específicos de la partida, utilizarlos
+            if datos_partida and 'monto_total' in datos_partida:
+                info_facturas = {
+                    'total_facturas': len(facturas_info),
+                    'monto_total': datos_partida['monto_total'],
+                    'monto_formateado': datos_partida['monto_total_formateado'],
+                    'montos_individuales': [f.get('monto_decimal', Decimal('0.00')) for f in facturas_info if isinstance(f, dict)]
+                }
+                self.update_status(f"  - Usando monto total proporcionado: {datos_partida['monto_total_formateado']}")
+            else:
+                # Calcular información resumida de facturas (totales, montos, etc.)
+                info_facturas = calcular_montos_facturas(facturas_info)
+                self.update_status(f"  - Calculados totales para {info_facturas['total_facturas']} facturas. "
+                                f"Monto total: {info_facturas['monto_formateado']}")
 
             # Añadir la información resumida a los datos comunes
-            datos_comunes['info_facturas'] = info_facturas
+            datos_comunes_copia['info_facturas'] = info_facturas
 
             # Procesar todas las plantillas de la partida
             self.update_status("Procesando plantillas de documentos...")
@@ -881,7 +926,7 @@ class AutomatizacionApp:
                 partida,
                 facturas_info,
                 partida_dir,
-                datos_comunes
+                datos_comunes_copia
             )
 
             # Registrar los archivos generados
@@ -903,9 +948,6 @@ class AutomatizacionApp:
             import traceback
             traceback.print_exc()
             return None
-
-
-# aqui termina el codigo
 
     def _mostrar_resumen_final(self):
         """Muestra el resumen final del procesamiento"""

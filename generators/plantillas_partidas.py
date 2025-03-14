@@ -35,21 +35,27 @@ def calcular_montos_facturas(facturas_info):
 
         total_facturas += 1
 
-        # Extraer el monto y convertirlo a Decimal
-        monto_str = factura.get('monto', '0')
-        if isinstance(monto_str, str):
-            # Limpiar el string de monto (eliminar símbolos de moneda y separadores de miles)
-            monto_limpio = re.sub(r'[^\d.]', '', monto_str.replace(',', ''))
-            try:
-                monto = Decimal(monto_limpio)
-                montos_individuales.append(monto)
-                monto_total += monto
-            except InvalidOperation:
-                logger.warning(f"No se pudo convertir el monto '{monto_str}' a decimal")
-        elif isinstance(monto_str, (int, float)):
-            monto = Decimal(str(monto_str))
-            montos_individuales.append(monto)
-            monto_total += monto
+        # Primero intentar usar el valor decimal directo
+        if 'monto_decimal' in factura:
+            monto = factura['monto_decimal']
+        else:
+            # Extraer el monto y convertirlo a Decimal
+            monto_str = factura.get('monto', '0')
+            if isinstance(monto_str, str):
+                # Limpiar el string de monto (eliminar símbolos de moneda y separadores de miles)
+                monto_limpio = re.sub(r'[^\d.]', '', monto_str.replace(',', ''))
+                try:
+                    monto = Decimal(monto_limpio)
+                except InvalidOperation:
+                    logger.warning(f"No se pudo convertir el monto '{monto_str}' a decimal")
+                    monto = Decimal('0.00')
+            elif isinstance(monto_str, (int, float)):
+                monto = Decimal(str(monto_str))
+            else:
+                monto = Decimal('0.00')
+        
+        montos_individuales.append(monto)
+        monto_total += monto
 
     # Formatear el monto total como string con formato moneda
     monto_formateado = f"$ {monto_total:,.2f}"
@@ -153,13 +159,17 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
     archivos_generados = {}
 
     try:
-        # Calcular información resumida de facturas
-        info_facturas = calcular_montos_facturas(facturas_info)
-        logger.info(f"Calculados totales para {info_facturas['total_facturas']} facturas. "
-                   f"Monto total: {info_facturas['monto_formateado']}")
-
-        # Añadir la información resumida a los datos comunes
-        datos_comunes['info_facturas'] = info_facturas
+        # Si la información de facturas ya está calculada, usarla
+        if 'info_facturas' in datos_comunes:
+            info_facturas = datos_comunes['info_facturas']
+            logger.info(f"Usando información de facturas proporcionada - Total: {info_facturas['monto_formateado']}")
+        else:
+            # Calcular información resumida de facturas
+            info_facturas = calcular_montos_facturas(facturas_info)
+            logger.info(f"Calculados totales para {info_facturas['total_facturas']} facturas. "
+                       f"Monto total: {info_facturas['monto_formateado']}")
+            # Añadir la información resumida a los datos comunes
+            datos_comunes['info_facturas'] = info_facturas
 
         # Procesar plantilla de ingresos-egresos
         ruta_ingresos = procesar_plantilla_ingresos(
@@ -274,7 +284,6 @@ def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comune
         logger.error(f"Error al procesar plantilla de ingresos: {str(e)}")
         raise Exception(f"Error al procesar plantilla de ingresos: {str(e)}")
 
-# inicio relacion de facturas
 # Importa lo necesario para trabajar con bordes y alineación
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -289,48 +298,44 @@ def aplicar_bordes_celda(celda):
     Args:
         celda: Celda de tabla a la que aplicar bordes
     """
-    # Código para agregar bordes a una celda
     tc = celda._tc
     tcPr = tc.get_or_add_tcPr()
-
+    
+    # Crear elemento de bordes
+    tcBorders = OxmlElement('w:tcBorders')
+    tcPr.append(tcBorders)
+    
     # Bordes: superior, inferior, izquierdo, derecho
     for border_type in ['top', 'bottom', 'left', 'right']:
-        border = OxmlElement('w:{}Border'.format(border_type))
-        border.set(qn('w:val'), 'single')  # Estilo de línea: single, double, dotted, etc.
-        border.set(qn('w:sz'), '4')  # Ancho de línea (en octavos de punto)
+        border = OxmlElement(f'w:{border_type}')
+        border.set(qn('w:val'), 'single')
+        border.set(qn('w:sz'), '4')
         border.set(qn('w:space'), '0')
-        border.set(qn('w:color'), '000000')  # Color (RGB hex)
-
-        borders = OxmlElement('w:borders')
-        borders.append(border)
-
-        tcBorders = tcPr.find_one(qn('w:tcBorders'))
-        if tcBorders is None:
-            tcBorders = OxmlElement('w:tcBorders')
-            tcPr.append(tcBorders)
-
-        tcBorder = tcBorders.find_one(qn('w:{}'.format(border_type)))
-        if tcBorder is not None:
-            tcBorders.remove(tcBorder)
-
+        border.set(qn('w:color'), '000000')
         tcBorders.append(border)
 
 # Función para aplicar formato a una celda (bordes, centrado, fuente)
+
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+
 def aplicar_formato_celda(celda, centrar=True, aplicar_bordes=True, fuente_geomanist=True):
     """
     Aplica formato completo a una celda: bordes, alineación y fuente.
 
     Args:
         celda: Celda de tabla
-        centrar: Si el texto debe centrarse
+        centrar: Si el texto debe centrarse horizontalmente
         aplicar_bordes: Si se deben aplicar bordes
         fuente_geomanist: Si se debe aplicar fuente Geomanist
     """
     # Aplicar bordes
     if aplicar_bordes:
         aplicar_bordes_celda(celda)
-
-    # Centrar texto en todos los párrafos de la celda
+    
+    # Aplicar alineación vertical al centro
+    celda.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    
+    # Centrar texto horizontalmente en todos los párrafos de la celda
     for paragraph in celda.paragraphs:
         if centrar:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -341,13 +346,57 @@ def aplicar_formato_celda(celda, centrar=True, aplicar_bordes=True, fuente_geoma
                 run.font.name = "Geomanist"
                 run.font.size = Pt(10)
 
-# Modificación de tu función procesar_plantilla_facturas
+
+##
+   
 def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comunes):
     """
     Procesa la plantilla de relación de facturas en formato Word.
     """
     try:
-        # [Código existente para cargar plantilla y preparar datos]
+        # Buscar la plantilla
+        template_path = encontrar_plantilla("relcion_facturas.docx")
+        if not template_path:
+            raise FileNotFoundError("No se encontró la plantilla de facturas")
+
+        logger.info(f"Utilizando plantilla: {template_path}")
+
+        # Cargar la plantilla
+        doc = Document(template_path)
+
+        # Datos comunes
+        mes = datos_comunes.get('mes_asignado', '').capitalize()
+        partida_num = partida.get('numero', '')
+        descripcion = partida.get('descripcion', '')
+        fecha_doc = datos_comunes.get('fecha_documento_texto', '')
+
+        # Información de facturas
+        info_facturas = datos_comunes.get('info_facturas', {})
+        total_facturas = info_facturas.get('total_facturas', 0)
+        monto_total = info_facturas.get('monto_total', Decimal('0.00'))
+        monto_formateado = info_facturas.get('monto_formateado', "$ 0.00")
+
+        # Datos del personal
+        personal_vobo = datos_comunes.get('personal_vobo', {})
+        grado_vobo = personal_vobo.get('Grado_Vo_Bo', '')
+        nombre_vobo = personal_vobo.get('Nombre_Vo_Bo', '')
+        matricula_vobo = personal_vobo.get('Matricula_Vo_Bo', '')
+
+        # Reemplazar marcadores de texto en todo el documento
+        reemplazos = {
+            '{{FECHA_DOCUMENTO}}': fecha_doc,
+            '{{MES}}': mes,
+            '{{PARTIDA}}': partida_num,
+            '{{DESCRIPCION}}': descripcion,
+            '{{TOTAL_FACTURAS}}': str(total_facturas),
+            '{{MONTO_TOTAL}}': monto_formateado,
+            '{{GRADO_VO_BO}}': grado_vobo,
+            '{{NOMBRE_VO_BO}}': nombre_vobo,
+            '{{MATRICULA_VO_BO}}': matricula_vobo
+        }
+
+        # Reemplazar todos los marcadores
+        reemplazar_marcadores(doc, reemplazos)
 
         # Verificar que hay al menos dos tablas en el documento
         if len(doc.tables) < 2:
@@ -384,7 +433,7 @@ def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comune
             # Verificar que la tabla tiene las columnas esperadas
             if len(celdas) >= 4:  # Fecha, Número, Emisor, Importe
                 # Formatear fecha
-                fecha_factura = factura.get('fecha', '')
+                fecha_factura = factura.get('fecha_factura', '')
                 if isinstance(fecha_factura, str) and '-' in fecha_factura:
                     try:
                         fecha_obj = datetime.strptime(fecha_factura, '%Y-%m-%d')
@@ -396,7 +445,15 @@ def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comune
                 celdas[0].text = str(fecha_factura)
                 celdas[1].text = str(factura.get('serie_numero', ''))
                 celdas[2].text = str(factura.get('emisor', ''))
-                celdas[3].text = str(factura.get('monto', ''))
+                
+                # Usar el valor formateado si existe, o formatear el valor decimal
+                if 'monto' in factura and '$' in str(factura['monto']):
+                    celdas[3].text = str(factura['monto'])
+                elif 'monto_decimal' in factura:
+                    celdas[3].text = f"$ {factura['monto_decimal']:,.2f}"
+                else:
+                    # Intentar formatear lo que haya
+                    celdas[3].text = str(factura.get('monto', '0'))
 
                 # Aplicar formato a todas las celdas de la nueva fila
                 for celda in celdas:
@@ -444,9 +501,6 @@ def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comune
         traceback.print_exc()
         raise Exception(f"Error al procesar plantilla de facturas: {str(e)}")
 
-
-
-# fin de la relacion de facturas
 def reemplazar_marcadores_preservando_formato(doc, reemplazos):
     """
     Reemplaza marcadores en un documento preservando totalmente el formato original.
@@ -633,7 +687,6 @@ def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes)
         reemplazar_marcadores_preservando_formato(doc, reemplazos)
 
         # No aplicamos formato Geomanist global en este caso para preservar los formatos originales
-
         # Guardar el documento
         output_path = os.path.join(output_dir, f"Oficio_Resumen_Partida_{partida_num}.docx")
         doc.save(output_path)
@@ -646,3 +699,5 @@ def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes)
         import traceback
         traceback.print_exc()
         raise Exception(f"Error al procesar plantilla de oficio: {str(e)}")
+
+        
