@@ -840,21 +840,23 @@ class AutomatizacionApp:
 
         return f"{conceptos}"
 
+    # aqui inicia
+
     def _generar_relacion_facturas(self, partida, facturas_info, partida_dir, datos_nivel1):
         """
-        Genera un documento de relación de facturas para la partida
+    Genera un documento de relación de facturas para la partida
 
-        Args:
-            partida: Datos de la partida
-            facturas_info: Lista de información de facturas procesadas
-            partida_dir: Directorio de la partida
-            datos_nivel1: Datos del nivel 1
-        """
+    Args:
+        partida: Datos de la partida
+        facturas_info: Lista de información de facturas procesadas
+        partida_dir: Directorio de la partida
+        datos_nivel1: Datos del nivel 1
+    """
         try:
             self.update_status(f"Generando relación de facturas para partida {partida['numero']}...")
 
             # Importar el módulo de plantillas de partidas
-            from generators.plantillas_partidas import procesar_plantillas_partida
+            from generators.plantillas_partidas import procesar_plantillas_partida, calcular_montos_facturas
 
             # Preparar datos comunes para las plantillas
             datos_comunes = {
@@ -865,7 +867,16 @@ class AutomatizacionApp:
                 'personal_vobo': datos_nivel1['personal_vobo']
             }
 
+            # Calcular información resumida de facturas (totales, montos, etc.)
+            info_facturas = calcular_montos_facturas(facturas_info)
+            self.update_status(f"  - Calculados totales para {info_facturas['total_facturas']} facturas. "
+                            f"Monto total: {info_facturas['monto_formateado']}")
+
+            # Añadir la información resumida a los datos comunes
+            datos_comunes['info_facturas'] = info_facturas
+
             # Procesar todas las plantillas de la partida
+            self.update_status("Procesando plantillas de documentos...")
             archivos_generados = procesar_plantillas_partida(
                 partida,
                 facturas_info,
@@ -882,13 +893,19 @@ class AutomatizacionApp:
                 f"✅ Relación de facturas generada para partida {partida['numero']}",
                 "success"
             )
+
+            return archivos_generados
         except Exception as e:
             self.update_status(
                 f"Error al generar relación de facturas: {str(e)}",
                 "error"
-            )   
-           
-        
+            )
+            import traceback
+            traceback.print_exc()
+            return None
+
+
+# aqui termina el codigo
 
     def _mostrar_resumen_final(self):
         """Muestra el resumen final del procesamiento"""
