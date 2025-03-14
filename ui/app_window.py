@@ -6,8 +6,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 import logging
+import sys
 
-# Importaciones internas
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import APP_CONFIG, PERSONAL_RECIBE, PERSONAL_VISTO_BUENO, MESES
 from ui.dialogs import DateSelector
 from controllers.process_controller import ProcessController

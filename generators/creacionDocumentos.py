@@ -52,7 +52,7 @@ def creacionDocumentos(template_path, output_dir, data, template_name):
             if '{{MONTO}}' in paragraph.text:
                 paragraph.text = paragraph.text.replace('{{MONTO}}', data['monto'])
             if '{{EMPLEO_RECURSO}}' in paragraph.text:
-                paragraph.text = paragraph.text.replace('{{EMPLEO_RECURSO}}', data['Conceptos'])
+                paragraph.text = paragraph.text.replace('{{EMPLEO_RECURSO}}', data['Empleo_recurso'])
             if '{{MES}}' in paragraph.text:
                 paragraph.text = paragraph.text.replace('{{MES}}', data['Mes'])
             if '{{NO_MENSAJE}}' in paragraph.text:
