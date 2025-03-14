@@ -7,6 +7,9 @@ from datetime import datetime
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from copy import deepcopy
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -96,28 +99,199 @@ def aplicar_formato_a_documento(doc):
                 for paragraph in cell.paragraphs:
                     aplicar_formato_geomanist(paragraph)
 
-def reemplazar_marcadores(doc, reemplazos):
+def aplicar_bordes_celda(celda):
     """
-    Reemplaza marcadores en un documento preservando el formato.
+    Aplica bordes a todos los lados de una celda.
+
+    Args:
+        celda: Celda de tabla a la que aplicar bordes
+    """
+    tc = celda._tc
+    tcPr = tc.get_or_add_tcPr()
+    
+    # Crear elemento de bordes
+    tcBorders = OxmlElement('w:tcBorders')
+    tcPr.append(tcBorders)
+    
+    # Bordes: superior, inferior, izquierdo, derecho
+    for border_type in ['top', 'bottom', 'left', 'right']:
+        border = OxmlElement(f'w:{border_type}')
+        border.set(qn('w:val'), 'single')
+        border.set(qn('w:sz'), '4')
+        border.set(qn('w:space'), '0')
+        border.set(qn('w:color'), '000000')
+        tcBorders.append(border)
+
+def aplicar_formato_celda(celda, centrar=True, aplicar_bordes=True, fuente_geomanist=True):
+    """
+    Aplica formato completo a una celda: bordes, alineación y fuente.
+
+    Args:
+        celda: Celda de tabla
+        centrar: Si el texto debe centrarse horizontalmente
+        aplicar_bordes: Si se deben aplicar bordes
+        fuente_geomanist: Si se debe aplicar fuente Geomanist
+    """
+    # Aplicar bordes
+    if aplicar_bordes:
+        aplicar_bordes_celda(celda)
+    
+    # Aplicar alineación vertical al centro
+    celda.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    
+    # Centrar texto horizontalmente en todos los párrafos de la celda
+    for paragraph in celda.paragraphs:
+        if centrar:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Aplicar formato Geomanist
+        if fuente_geomanist:
+            for run in paragraph.runs:
+                run.font.name = "Geomanist"
+                run.font.size = Pt(10)
+
+def reemplazar_marcadores_texto(texto, reemplazos):
+    """
+    Reemplaza marcadores en un texto.
+
+    Args:
+        texto: Texto con marcadores
+        reemplazos: Diccionario con los marcadores y sus reemplazos
+
+    Returns:
+        str: Texto con los marcadores reemplazados
+    """
+    texto_resultado = texto
+    for key, value in reemplazos.items():
+        if key in texto_resultado:
+            texto_resultado = texto_resultado.replace(key, str(value))
+    return texto_resultado
+
+def reemplazar_marcadores_en_run(run, reemplazos):
+    """
+    Reemplaza marcadores en un run individual.
+
+    Args:
+        run: Run que puede contener marcadores
+        reemplazos: Diccionario con los marcadores y sus reemplazos
+
+    Returns:
+        bool: True si se realizó algún reemplazo, False en caso contrario
+    """
+    texto_original = run.text
+    texto_nuevo = reemplazar_marcadores_texto(texto_original, reemplazos)
+    
+    if texto_nuevo != texto_original:
+        run.text = texto_nuevo
+        return True
+    
+    return False
+
+def reemplazar_marcadores_en_parrafo(paragraph, reemplazos):
+    """
+    Reemplaza marcadores en un párrafo completo, manteniendo el formato de cada run.
+
+    Args:
+        paragraph: Párrafo que puede contener marcadores
+        reemplazos: Diccionario con los marcadores y sus reemplazos
+
+    Returns:
+        bool: True si se realizó algún reemplazo, False en caso contrario
+    """
+    texto_completo = paragraph.text
+    
+    # Verificar si hay marcadores en el párrafo completo
+    tiene_marcadores = any(key in texto_completo for key in reemplazos)
+    
+    if not tiene_marcadores:
+        return False
+    
+    # Si hay marcadores, reemplazar en cada run
+    se_realizo_reemplazo = False
+    for run in paragraph.runs:
+        if reemplazar_marcadores_en_run(run, reemplazos):
+            se_realizo_reemplazo = True
+    
+    # Si el reemplazo run por run no funcionó, probar con método alternativo
+    if not se_realizo_reemplazo and tiene_marcadores:
+        # Guardar el formato de cada run
+        runs_info = []
+        for run in paragraph.runs:
+            runs_info.append({
+                'texto': run.text,
+                'bold': run.bold,
+                'italic': run.italic,
+                'underline': run.underline,
+                'font_name': run.font.name,
+                'font_size': run.font.size,
+                'color': run.font.color.rgb if run.font.color else None
+            })
+        
+        # Reemplazar en el texto completo
+        texto_nuevo = reemplazar_marcadores_texto(texto_completo, reemplazos)
+        
+        # Si hay cambios, aplicar el texto nuevo
+        if texto_nuevo != texto_completo:
+            # Limpiar el párrafo
+            for _ in range(len(paragraph.runs)):
+                paragraph.runs[0]._element.getparent().remove(paragraph.runs[0]._element)
+            
+            # Crear un nuevo run con el texto completo y recuperar formato del primer run original
+            if runs_info:
+                run = paragraph.add_run(texto_nuevo)
+                run.bold = runs_info[0]['bold']
+                run.italic = runs_info[0]['italic']
+                run.underline = runs_info[0]['underline']
+                if runs_info[0]['font_name']:
+                    run.font.name = runs_info[0]['font_name']
+                if runs_info[0]['font_size']:
+                    run.font.size = runs_info[0]['font_size']
+                if runs_info[0]['color']:
+                    run.font.color.rgb = runs_info[0]['color']
+            else:
+                paragraph.add_run(texto_nuevo)
+            
+            se_realizo_reemplazo = True
+    
+    return se_realizo_reemplazo
+
+def reemplazar_marcadores_en_celda(cell, reemplazos):
+    """
+    Reemplaza marcadores en todos los párrafos de una celda.
+
+    Args:
+        cell: Celda de tabla que puede contener marcadores
+        reemplazos: Diccionario con los marcadores y sus reemplazos
+
+    Returns:
+        bool: True si se realizó algún reemplazo, False en caso contrario
+    """
+    se_realizo_reemplazo = False
+    
+    for paragraph in cell.paragraphs:
+        if reemplazar_marcadores_en_parrafo(paragraph, reemplazos):
+            se_realizo_reemplazo = True
+    
+    return se_realizo_reemplazo
+
+def reemplazar_marcadores_en_documento(doc, reemplazos):
+    """
+    Reemplaza todos los marcadores en un documento completo.
+    Esta función maneja tanto párrafos como tablas y preserva el formato.
 
     Args:
         doc: Documento Word
         reemplazos: Diccionario con los marcadores y sus reemplazos
     """
-    # Reemplazar en párrafos
+    # Procesar todos los párrafos del documento
     for paragraph in doc.paragraphs:
-        for key, value in reemplazos.items():
-            for i, run in enumerate(paragraph.runs):
-                run.text = run.text.replace(key, str(value))
-
-    # Reemplazar en tablas
+        reemplazar_marcadores_en_parrafo(paragraph, reemplazos)
+    
+    # Procesar todas las tablas del documento
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    for key, value in reemplazos.items():
-                        for run in paragraph.runs:
-                            run.text = run.text.replace(key, str(value))
+                reemplazar_marcadores_en_celda(cell, reemplazos)
 
 def encontrar_plantilla(nombre_archivo, base_dir=None):
     """
@@ -207,6 +381,8 @@ def procesar_plantillas_partida(partida, facturas_info, partida_dir, datos_comun
         logger.error(f"Error al procesar plantillas de partida: {str(e)}")
         raise Exception(f"Error al procesar plantillas de partida: {str(e)}")
 
+# aqui van las funciones de cada plantilla
+
 def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comunes):
     """
     Procesa la plantilla de ingresos/egresos en formato Word.
@@ -268,8 +444,66 @@ def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comune
             '{{MATRICULA_VO_BO}}': matricula_vobo
         }
 
-        # Reemplazar todos los marcadores
-        reemplazar_marcadores(doc, reemplazos)
+        # Reemplazar todos los marcadores utilizando la función mejorada
+        reemplazar_marcadores_en_documento(doc, reemplazos)
+
+        # Realizar una verificación adicional para el último párrafo (firma)
+        # Esta verificación asegura que los marcadores en ese párrafo específico sean reemplazados
+        if len(doc.paragraphs) > 0:
+            # Verificar los últimos párrafos (para asegurar que los de firma sean procesados)
+            for i in range(min(5, len(doc.paragraphs))):
+                idx = len(doc.paragraphs) - 1 - i
+                parrafo = doc.paragraphs[idx]
+                
+                # Buscar marcadores específicos de firma en este párrafo
+                texto_original = parrafo.text
+                tiene_marcador = any(key in texto_original for key in ['{{GRADO_VO_BO}}', '{{NOMBRE_VO_BO}}', '{{MATRICULA_VO_BO}}'])
+                
+                if tiene_marcador:
+                    logger.info(f"Encontrado párrafo de firma en posición {idx}")
+                    
+                    # Reemplazar directamente en el texto y preservar el formato
+                    texto_nuevo = texto_original
+                    for key, value in reemplazos.items():
+                        if key in texto_nuevo:
+                            texto_nuevo = texto_nuevo.replace(key, str(value))
+                    
+                    if texto_nuevo != texto_original:
+                        # Guardar el formato (del primer run como referencia)
+                        formato = None
+                        if parrafo.runs:
+                            run_ref = parrafo.runs[0]
+                            formato = {
+                                'bold': run_ref.bold,
+                                'italic': run_ref.italic,
+                                'underline': run_ref.underline,
+                                'font_name': run_ref.font.name,
+                                'font_size': run_ref.font.size
+                            }
+                        
+                        # Limpiar el párrafo
+                        for _ in range(len(parrafo.runs)):
+                            parrafo.runs[0]._element.getparent().remove(parrafo.runs[0]._element)
+                        
+                        # Agregar nuevo run con el texto actualizado
+                        run_nuevo = parrafo.add_run(texto_nuevo)
+                        
+                        # Aplicar formato guardado
+                        if formato:
+                            run_nuevo.bold = formato['bold']
+                            run_nuevo.italic = formato['italic']
+                            run_nuevo.underline = formato['underline']
+                            if formato['font_name']:
+                                run_nuevo.font.name = formato['font_name']
+                            if formato['font_size']:
+                                run_nuevo.font.size = formato['font_size']
+
+        # Realizar una verificación final para asegurarse que los marcadores se hayan reemplazado
+        for paragraph in doc.paragraphs:
+            for key in reemplazos.keys():
+                if key in paragraph.text:
+                    logger.warning(f"Marcador {key} no reemplazado en plantilla de ingresos. Intentando nuevo reemplazo.")
+                    paragraph.text = paragraph.text.replace(key, str(reemplazos[key]))
 
         # Aplicar formato Geomanist 10pt a todo el documento
         aplicar_formato_a_documento(doc)
@@ -278,77 +512,16 @@ def procesar_plantilla_ingresos(output_dir, partida, facturas_info, datos_comune
         output_path = os.path.join(output_dir, f"Ingresos_Egresos_Partida_{partida_num}.docx")
         doc.save(output_path)
 
+        logger.info(f"Documento de ingresos/egresos generado: {output_path}")
         return output_path
 
     except Exception as e:
         logger.error(f"Error al procesar plantilla de ingresos: {str(e)}")
         raise Exception(f"Error al procesar plantilla de ingresos: {str(e)}")
 
-# Importa lo necesario para trabajar con bordes y alineación
-from docx.shared import Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-
-# Función para aplicar bordes a una celda
-def aplicar_bordes_celda(celda):
-    """
-    Aplica bordes a todos los lados de una celda.
-
-    Args:
-        celda: Celda de tabla a la que aplicar bordes
-    """
-    tc = celda._tc
-    tcPr = tc.get_or_add_tcPr()
-    
-    # Crear elemento de bordes
-    tcBorders = OxmlElement('w:tcBorders')
-    tcPr.append(tcBorders)
-    
-    # Bordes: superior, inferior, izquierdo, derecho
-    for border_type in ['top', 'bottom', 'left', 'right']:
-        border = OxmlElement(f'w:{border_type}')
-        border.set(qn('w:val'), 'single')
-        border.set(qn('w:sz'), '4')
-        border.set(qn('w:space'), '0')
-        border.set(qn('w:color'), '000000')
-        tcBorders.append(border)
-
-# Función para aplicar formato a una celda (bordes, centrado, fuente)
-
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-
-def aplicar_formato_celda(celda, centrar=True, aplicar_bordes=True, fuente_geomanist=True):
-    """
-    Aplica formato completo a una celda: bordes, alineación y fuente.
-
-    Args:
-        celda: Celda de tabla
-        centrar: Si el texto debe centrarse horizontalmente
-        aplicar_bordes: Si se deben aplicar bordes
-        fuente_geomanist: Si se debe aplicar fuente Geomanist
-    """
-    # Aplicar bordes
-    if aplicar_bordes:
-        aplicar_bordes_celda(celda)
-    
-    # Aplicar alineación vertical al centro
-    celda.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-    
-    # Centrar texto horizontalmente en todos los párrafos de la celda
-    for paragraph in celda.paragraphs:
-        if centrar:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        # Aplicar formato Geomanist
-        if fuente_geomanist:
-            for run in paragraph.runs:
-                run.font.name = "Geomanist"
-                run.font.size = Pt(10)
 
 
-##
-   
+
 def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comunes):
     """
     Procesa la plantilla de relación de facturas en formato Word.
@@ -395,8 +568,8 @@ def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comune
             '{{MATRICULA_VO_BO}}': matricula_vobo
         }
 
-        # Reemplazar todos los marcadores
-        reemplazar_marcadores(doc, reemplazos)
+        # Reemplazar todos los marcadores utilizando la función mejorada
+        reemplazar_marcadores_en_documento(doc, reemplazos)
 
         # Verificar que hay al menos dos tablas en el documento
         if len(doc.tables) < 2:
@@ -488,6 +661,13 @@ def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comune
             for run in celdas[3].paragraphs[0].runs:
                 run.bold = True
 
+        # Realizar una verificación final para asegurarse que los marcadores se hayan reemplazado
+        for paragraph in doc.paragraphs:
+            for key in reemplazos.keys():
+                if key in paragraph.text:
+                    logger.warning(f"Marcador {key} no reemplazado en plantilla de facturas. Intentando nuevo reemplazo.")
+                    paragraph.text = paragraph.text.replace(key, str(reemplazos[key]))
+
         # Guardar el documento
         output_path = os.path.join(output_dir, f"Relacion_Facturas_Partida_{partida.get('numero', '')}.docx")
         doc.save(output_path)
@@ -500,138 +680,7 @@ def procesar_plantilla_facturas(output_dir, partida, facturas_info, datos_comune
         import traceback
         traceback.print_exc()
         raise Exception(f"Error al procesar plantilla de facturas: {str(e)}")
-
-def reemplazar_marcadores_preservando_formato(doc, reemplazos):
-    """
-    Reemplaza marcadores en un documento preservando totalmente el formato original.
-    Solo reemplaza el texto dentro de los marcadores sin modificar ningún formato.
-
-    Args:
-        doc: Documento Word
-        reemplazos: Diccionario con los marcadores y sus reemplazos
-    """
-    # Reemplazar en párrafos
-    for paragraph in doc.paragraphs:
-        texto_original = paragraph.text
-
-        # Verificar si hay algún marcador en el párrafo
-        tiene_marcador = any(key in texto_original for key in reemplazos)
-
-        if tiene_marcador:
-            # Guardar los runs originales y sus formatos
-            runs_originales = []
-            for run in paragraph.runs:
-                runs_originales.append({
-                    'texto': run.text,
-                    'estilo': {
-                        'bold': run.bold,
-                        'italic': run.italic,
-                        'underline': run.underline,
-                        'font_name': run.font.name,
-                        'font_size': run.font.size,
-                        'color': run.font.color.rgb if run.font.color else None
-                    }
-                })
-
-            # Realizar los reemplazos solo en el texto
-            texto_nuevo = texto_original
-            for key, value in reemplazos.items():
-                if key in texto_nuevo:
-                    texto_nuevo = texto_nuevo.replace(key, str(value))
-
-            # Limpiar el párrafo original
-            for _ in range(len(paragraph.runs)):
-                paragraph.runs[0]._element.getparent().remove(paragraph.runs[0]._element)
-
-            # Recrear los runs con el nuevo texto pero manteniendo el formato original
-            index_texto_actual = 0
-            for run_info in runs_originales:
-                texto_run = run_info['texto']
-                longitud_texto = len(texto_run)
-
-                # Si el run original contenía parte del texto a reemplazar,
-                # el texto nuevo puede ser más largo o más corto
-                if index_texto_actual < len(texto_nuevo):
-                    # Usar la misma longitud del run original o lo que queda del texto nuevo
-                    texto_nuevo_run = texto_nuevo[index_texto_actual:min(index_texto_actual + longitud_texto, len(texto_nuevo))]
-
-                    # Crear un nuevo run con el formato original
-                    run = paragraph.add_run(texto_nuevo_run)
-
-                    # Aplicar el formato original
-                    estilo = run_info['estilo']
-                    run.bold = estilo['bold']
-                    run.italic = estilo['italic']
-                    run.underline = estilo['underline']
-                    if estilo['font_name']:
-                        run.font.name = estilo['font_name']
-                    if estilo['font_size']:
-                        run.font.size = estilo['font_size']
-                    if estilo['color']:
-                        run.font.color.rgb = estilo['color']
-
-                    # Avanzar en el índice del texto nuevo
-                    index_texto_actual += longitud_texto
-
-    # Reemplazar en tablas
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    texto_original = paragraph.text
-
-                    # Verificar si hay algún marcador en el párrafo
-                    tiene_marcador = any(key in texto_original for key in reemplazos)
-
-                    if tiene_marcador:
-                        # Guardar los runs originales y sus formatos
-                        runs_originales = []
-                        for run in paragraph.runs:
-                            runs_originales.append({
-                                'texto': run.text,
-                                'estilo': {
-                                    'bold': run.bold,
-                                    'italic': run.italic,
-                                    'underline': run.underline,
-                                    'font_name': run.font.name,
-                                    'font_size': run.font.size,
-                                    'color': run.font.color.rgb if run.font.color else None
-                                }
-                            })
-
-                        # Realizar los reemplazos solo en el texto
-                        texto_nuevo = texto_original
-                        for key, value in reemplazos.items():
-                            if key in texto_nuevo:
-                                texto_nuevo = texto_nuevo.replace(key, str(value))
-
-                        # Limpiar el párrafo original
-                        for _ in range(len(paragraph.runs)):
-                            paragraph.runs[0]._element.getparent().remove(paragraph.runs[0]._element)
-
-                        # Recrear los runs con el nuevo texto pero manteniendo el formato original
-                        index_texto_actual = 0
-                        for run_info in runs_originales:
-                            texto_run = run_info['texto']
-                            longitud_texto = len(texto_run)
-
-                            if index_texto_actual < len(texto_nuevo):
-                                texto_nuevo_run = texto_nuevo[index_texto_actual:min(index_texto_actual + longitud_texto, len(texto_nuevo))]
-
-                                run = paragraph.add_run(texto_nuevo_run)
-
-                                estilo = run_info['estilo']
-                                run.bold = estilo['bold']
-                                run.italic = estilo['italic']
-                                run.underline = estilo['underline']
-                                if estilo['font_name']:
-                                    run.font.name = estilo['font_name']
-                                if estilo['font_size']:
-                                    run.font.size = estilo['font_size']
-                                if estilo['color']:
-                                    run.font.color.rgb = estilo['color']
-
-                                index_texto_actual += longitud_texto
+    
 
 def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes):
     """
@@ -640,7 +689,7 @@ def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes)
     """
     try:
         # Buscar la plantilla
-        template_path = encontrar_plantilla("oficio.docx")
+        template_path = encontrar_plantilla("Oficio.docx")
         if not template_path:
             raise FileNotFoundError("No se encontró la plantilla de oficio")
 
@@ -683,10 +732,67 @@ def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes)
             '{{MATRICULA_VO_BO}}': matricula_vobo
         }
 
-        # Reemplazar todos los marcadores preservando formatos originales
-        reemplazar_marcadores_preservando_formato(doc, reemplazos)
+        # Reemplazar todos los marcadores utilizando la función mejorada
+        reemplazar_marcadores_en_documento(doc, reemplazos)
 
-        # No aplicamos formato Geomanist global en este caso para preservar los formatos originales
+        # Realizar una verificación adicional para el último párrafo (firma)
+        # Esta verificación asegura que los marcadores en ese párrafo específico sean reemplazados
+        if len(doc.paragraphs) > 0:
+            # Verificar los últimos párrafos (para asegurar que los de firma sean procesados)
+            for i in range(min(5, len(doc.paragraphs))):
+                idx = len(doc.paragraphs) - 1 - i
+                parrafo = doc.paragraphs[idx]
+                
+                # Buscar marcadores específicos de firma en este párrafo
+                texto_original = parrafo.text
+                tiene_marcador = any(key in texto_original for key in ['{{GRADO_VO_BO}}', '{{NOMBRE_VO_BO}}', '{{MATRICULA_VO_BO}}'])
+                
+                if tiene_marcador:
+                    logger.info(f"Encontrado párrafo de firma en posición {idx}")
+                    
+                    # Reemplazar directamente en el texto y preservar el formato
+                    texto_nuevo = texto_original
+                    for key, value in reemplazos.items():
+                        if key in texto_nuevo:
+                            texto_nuevo = texto_nuevo.replace(key, str(value))
+                    
+                    if texto_nuevo != texto_original:
+                        # Guardar el formato (del primer run como referencia)
+                        formato = None
+                        if parrafo.runs:
+                            run_ref = parrafo.runs[0]
+                            formato = {
+                                'bold': run_ref.bold,
+                                'italic': run_ref.italic,
+                                'underline': run_ref.underline,
+                                'font_name': run_ref.font.name,
+                                'font_size': run_ref.font.size
+                            }
+                        
+                        # Limpiar el párrafo
+                        for _ in range(len(parrafo.runs)):
+                            parrafo.runs[0]._element.getparent().remove(parrafo.runs[0]._element)
+                        
+                        # Agregar nuevo run con el texto actualizado
+                        run_nuevo = parrafo.add_run(texto_nuevo)
+                        
+                        # Aplicar formato guardado
+                        if formato:
+                            run_nuevo.bold = formato['bold']
+                            run_nuevo.italic = formato['italic']
+                            run_nuevo.underline = formato['underline']
+                            if formato['font_name']:
+                                run_nuevo.font.name = formato['font_name']
+                            if formato['font_size']:
+                                run_nuevo.font.size = formato['font_size']
+
+        # Realizar una verificación final para asegurarse que los marcadores se hayan reemplazado
+        for paragraph in doc.paragraphs:
+            for key in reemplazos.keys():
+                if key in paragraph.text:
+                    logger.warning(f"Marcador {key} no reemplazado en plantilla de oficio. Intentando nuevo reemplazo.")
+                    paragraph.text = paragraph.text.replace(key, str(reemplazos[key]))
+
         # Guardar el documento
         output_path = os.path.join(output_dir, f"Oficio_Resumen_Partida_{partida_num}.docx")
         doc.save(output_path)
@@ -699,5 +805,3 @@ def procesar_plantilla_oficio(output_dir, partida, facturas_info, datos_comunes)
         import traceback
         traceback.print_exc()
         raise Exception(f"Error al procesar plantilla de oficio: {str(e)}")
-
-        

@@ -111,6 +111,7 @@ class FacturaController:
             return {
                 'serie_numero': f"{data['Serie']}{data['Numero']}",
                 'fecha': data.get('Fecha_factura_texto', data.get('Fecha_factura', '')),
+                'fecha_factura': data.get('Fecha_factura', ''), 
                 'emisor': data['Nombre_Emisor'],
                 'rfc_emisor': data['Rfc_emisor'],
                 'monto': data['monto'],
