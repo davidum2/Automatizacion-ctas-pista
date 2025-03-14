@@ -139,10 +139,9 @@ class ConceptoEditor(simpledialog.Dialog):
         """El resultado ya se guardó en validate()"""
         pass
 
-
 def formatear_conceptos_automatico(conceptos_originales):
     """
-    Formatea automáticamente los conceptos sin necesidad de interfaz gráfica
+    Formatea todos los conceptos en un formato unificado.
 
     Args:
         conceptos_originales (dict): Diccionario con los conceptos originales {descripcion: cantidad}
@@ -150,35 +149,27 @@ def formatear_conceptos_automatico(conceptos_originales):
     Returns:
         str: Texto formateado de conceptos
     """
-    total_items = sum(conceptos_originales.values())
+    # Crear una lista vacía para almacenar los conceptos formateados
+    conceptos_texto = []
+    
+    # Ordenar los conceptos por cantidad (de mayor a menor)
+    sorted_items = sorted(conceptos_originales.items(), key=lambda x: x[1], reverse=True)
+    
+    # Procesar cada concepto
+    for descripcion, cantidad in sorted_items:
+        # Limpiar descripción (eliminar numeración al inicio si existe)
+        clean_desc = re.sub(r'^\d+\s*\.\s*', '', descripcion).strip()
+        
+        # Formatear cantidad con 3 decimales y añadir a la lista
+        conceptos_texto.append(f"{cantidad:.3f} {clean_desc}")
+    
+    # Unir todos los conceptos con comas
+    return ", ".join(conceptos_texto)
 
-    # Si solo hay un concepto, usar ese directamente
-    if len(conceptos_originales) == 1:
-        descripcion = list(conceptos_originales.keys())[0]
-        cantidad = list(conceptos_originales.values())[0]
-        return f"{cantidad:.3f} {descripcion}"
 
-    # Si hay 2-3 conceptos, listarlos todos
-    elif len(conceptos_originales) <= 3:
-        conceptos_texto = []
-        for descripcion, cantidad in conceptos_originales.items():
-            # Limpiar descripción
-            clean_desc = re.sub(r'^\d+\s*\.\s*', '', descripcion).strip()
-            conceptos_texto.append(f"{cantidad:.3f} {clean_desc}")
-        return ", ".join(conceptos_texto)
 
-    # Si hay muchos conceptos, hacer un resumen
-    else:
-        # Tomar los 3 conceptos más importantes
-        sorted_items = sorted(conceptos_originales.items(), key=lambda x: x[1], reverse=True)
-        principales = sorted_items[:3]
 
-        conceptos_texto = []
-        for descripcion, cantidad in principales:
-            clean_desc = re.sub(r'^\d+\s*\.\s*', '', descripcion).strip()
-            conceptos_texto.append(f"{cantidad:.3f} {clean_desc}")
-
-        return f"{', '.join(conceptos_texto)} y otros artículos (total {total_items:.3f} unidades)"
+# aqui
 
 def editar_conceptos(parent, conceptos_originales, partida_descripcion):
     """
